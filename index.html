@@ -8,1342 +8,925 @@
 <meta name="apple-mobile-web-app-title" content="Flock &amp; Feather"/>
 <title>Flock &amp; Feather</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:#F0EBE3;font-family:'DM Sans',system-ui,sans-serif;-webkit-text-size-adjust:100%;}
-input,textarea,select{font-family:'DM Sans',system-ui,sans-serif;-webkit-appearance:none;font-size:16px!important;}
+html,body{height:100%;background:#F0EBE3;}
+body{font-family:'DM Sans',system-ui,sans-serif;-webkit-text-size-adjust:100%;overscroll-behavior:none;}
+/* CRITICAL: 16px font size prevents iOS zoom which causes keyboard dismissal */
+input,textarea,select{
+  font-family:'DM Sans',system-ui,sans-serif;
+  font-size:16px !important;
+  -webkit-appearance:none;
+  border-radius:0;
+}
+/* Prevent iOS from auto-scrolling when keyboard opens */
+.scroll-container{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:#E2DAD0;border-radius:2px;}
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
-const {useState, useRef, useCallback} = React;
+<script>
+// Pre-define Babel options to avoid recompilation triggers
+Babel.registerPreset('app', {
+  presets: [
+    [Babel.availablePresets['react'], {}]
+  ]
+});
+</script>
+<script type="text/babel" data-presets="app" data-type="module">
 
+const {useState, useRef, useEffect, useCallback, useMemo} = React;
 
-// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
-const C = {
-  bg: "#F0EBE3", bgCard: "#FFFFFF", bgMuted: "#F7F3EE",
-  headerBg: "#3D4F35", green: "#3D4F35", greenLight: "#EBF0E8",
-  gold: "#B89A6A", goldLight: "#F5EED8", goldBorder: "#D4BC8A",
-  text: "#2C2C27", textMid: "#5A5850", textMuted: "#9A9488",
-  border: "#E2DAD0", borderLight: "#EDE7DF",
-  red: "#B94040", redLight: "#FFF0F0",
-  amber: "#C4883A", amberLight: "#FFF8EC",
-  blue: "#3A6EA5", blueLight: "#EEF3FB",
-  purple: "#7A5E9A", purpleLight: "#F5F0FB",
+// ── DESIGN TOKENS ─────────────────────────────────────────────────────────────
+const C={
+  bg:"#F0EBE3",bgCard:"#FFFFFF",bgMuted:"#F7F3EE",
+  headerBg:"#3D4F35",green:"#3D4F35",greenLight:"#EBF0E8",
+  gold:"#B89A6A",goldLight:"#F5EED8",goldBorder:"#D4BC8A",
+  text:"#2C2C27",textMid:"#5A5850",textMuted:"#9A9488",
+  border:"#E2DAD0",borderLight:"#EDE7DF",
+  red:"#B94040",redLight:"#FFF0F0",
+  amber:"#C4883A",amberLight:"#FFF8EC",
+  blue:"#3A6EA5",blueLight:"#EEF3FB",
+  purple:"#7A5E9A",
 };
-const GS = { fontSerif: "'Cormorant Garamond','Playfair Display',Georgia,serif", fontSans: "'DM Sans',system-ui,sans-serif" };
+const FS={serif:"'Cormorant Garamond',Georgia,serif",sans:"'DM Sans',system-ui,sans-serif"};
 
-// ─── STATIC DATA ──────────────────────────────────────────────────────────────
-const CURRENT_USER = { id: "u1", name: "Sarah", avatar: "S", role: "Owner" };
-const FLOCK_MEMBERS = [
-  { id: "u1", name: "Sarah", avatar: "S", role: "Owner", online: true, color: C.green },
-  { id: "u2", name: "James", avatar: "J", role: "Co-keeper", online: true, color: C.blue },
-  { id: "u3", name: "Mum", avatar: "M", role: "Carer (read-only)", online: false, color: C.textMuted },
+// ── STATIC DATA ───────────────────────────────────────────────────────────────
+const BREEDS=["Buff Orpington","Rhode Island Red","Light Sussex","Warrens / Hybrid","Bluebelle","Black Rock","Marans","Barnevelder","Wyandotte","Plymouth Rock","Leghorn","Australorp","Pekin Bantam","Silkie","Frizzle","Araucana","Welsummer","Other"];
+const EMOJIS=["🐓","🐔","🐣","🐥","🦤","🦜"];
+const HEN_COLORS=["#B89A6A","#B94040","#7A8C9A","#4E6642","#8B5E83","#3A6EA5","#C4883A","#5A5850"];
+const CARE_TASKS=[
+  {id:"feed",label:"Morning feed & fresh water",sub:"Check feeders, rinse drinkers"},
+  {id:"eggs",label:"Egg collection",sub:"Collect morning and afternoon"},
+  {id:"coop",label:"Coop door opened safely",sub:"Check for predator signs"},
+  {id:"observe",label:"Observe flock behaviour",sub:"Watch for lethargy, limping, isolation"},
+  {id:"evening",label:"Evening headcount & lock up",sub:"All hens roosted before closing"},
+  {id:"dustbath",label:"Dust bath available",sub:"Top up with dry earth or ash"},
+  {id:"mitecheck",label:"Red mite check",sub:"Check perches and nest box corners"},
+  {id:"wormer",label:"Wormer administered",sub:"As per current treatment schedule"},
 ];
-const BREEDS = ["Buff Orpington","Rhode Island Red","Light Sussex","Warrens / Hybrid","Bluebelle","Black Rock","Marans","Barnevelder","Wyandotte","Plymouth Rock","Leghorn","Australorp","Pekin Bantam","Silkie","Frizzle","Araucana","Welsummer","Other"];
-const HEN_EMOJIS = ["🐓","🐔","🐣","🐥","🦤","🦜"];
-const HEN_COLORS = ["#B89A6A","#B94040","#7A8C9A","#4E6642","#8B5E83","#3A6EA5","#C4883A","#5A5850"];
-const EMPTY_HEN = { name:"", breed:"", age:"", dob:"", color:HEN_COLORS[0], emoji:"🐓", inLay:false, notes:"", photo:null, photoOffsetX:0, photoOffsetY:0, photoScale:1 };
-const CARE_TASKS = [
-  { id:"feed",    label:"Morning feed & fresh water",  sub:"Check feeders, rinse drinkers",         icon:"🌾" },
-  { id:"eggs",    label:"Egg collection",               sub:"Collect morning and afternoon",          icon:"🥚" },
-  { id:"coop",    label:"Coop door opened safely",      sub:"Check for predator signs",               icon:"🏠" },
-  { id:"observe", label:"Observe flock behaviour",      sub:"Watch for lethargy, limping, isolation", icon:"👁" },
-  { id:"evening", label:"Evening headcount & lock up",  sub:"All hens roosted before closing",        icon:"🌙" },
-  { id:"dustbath",label:"Dust bath available",          sub:"Top up with dry earth or ash",           icon:"🌿" },
-  { id:"mitecheck",label:"Red mite check",             sub:"Check perches and nest box corners",      icon:"🔍" },
-  { id:"wormer",  label:"Wormer administered",          sub:"As per current treatment schedule",      icon:"💊" },
+const WELFARE_CONDITIONS=[
+  {id:"bumblefoot",label:"Bumblefoot",opts:["No signs","Mild swelling","Open wound"],icon:"🦶"},
+  {id:"comb",label:"Comb condition",opts:["Red & upright","Pale / drooping","Purple or scabby"],icon:"🌹"},
+  {id:"abdomen",label:"Abdomen",opts:["Soft & normal","Slightly distended","Hard / fluid"],icon:"🫃"},
+  {id:"lice",label:"Lice / mites",opts:["Clear","Some signs","Active infestation"],icon:"🔬"},
+  {id:"feathers",label:"Feather loss",opts:["None","Mild patching","Significant loss"],icon:"🪶"},
+  {id:"worms",label:"Worm burden",opts:["Not suspected","Suspected","Confirmed"],icon:"🪱"},
+  {id:"tumour",label:"Lumps / tumours",opts:["None felt","Possible lump","Confirmed"],icon:"⚠️"},
+  {id:"breathing",label:"Respiratory signs",opts:["Clear","Occasional wheeze","Persistent"],icon:"💨"},
+  {id:"mobility",label:"Mobility",opts:["Normal","Slight limp","Lame"],icon:"🚶"},
 ];
-const HEALTH_MARKERS = [
-  { id:"comb",    label:"Comb",          options:["Red & Upright ✅","Pale / Drooping ⚠️","Purple/Blue 🚨"], icon:"🌹" },
-  { id:"eyes",    label:"Eyes",          options:["Bright & Clear ✅","Dull / Watery ⚠️","Swollen / Discharge 🚨"], icon:"👁️" },
-  { id:"droppings",label:"Droppings",   options:["Normal ✅","Watery ⚠️","Blood / Black 🚨"], icon:"💩" },
-  { id:"feathers",label:"Feathers",     options:["Glossy & Full ✅","Dull / Patchy ⚠️","Severe loss 🚨"], icon:"🪶" },
-  { id:"activity",label:"Activity",     options:["Alert & Active ✅","Quieter than usual ⚠️","Lethargic / Isolated 🚨"], icon:"⚡" },
-  { id:"bumblefoot",label:"Bumblefoot", options:["No signs ✅","Mild swelling ⚠️","Open wound 🚨"], icon:"🦶" },
-  { id:"weight",  label:"Body condition",options:["Good weight ✅","Slightly thin ⚠️","Very thin 🚨"], icon:"⚖️" },
+const HEALTH_MARKERS=[
+  {id:"comb",label:"Comb",opts:["Red & Upright ✅","Pale / Drooping ⚠️","Purple/Blue 🚨"],icon:"🌹"},
+  {id:"eyes",label:"Eyes",opts:["Bright & Clear ✅","Dull / Watery ⚠️","Swollen 🚨"],icon:"👁️"},
+  {id:"droppings",label:"Droppings",opts:["Normal ✅","Watery ⚠️","Blood / Black 🚨"],icon:"💩"},
+  {id:"feathers",label:"Feathers",opts:["Glossy & Full ✅","Dull / Patchy ⚠️","Severe loss 🚨"],icon:"🪶"},
+  {id:"activity",label:"Activity",opts:["Alert & Active ✅","Quieter than usual ⚠️","Lethargic 🚨"],icon:"⚡"},
 ];
-const EGG_TYPES = [
-  { label:"Normal egg",           icon:"🥚", advice:"Healthy egg — no concerns.", color:C.green },
-  { label:"Soft shell",           icon:"🫧", advice:"May indicate calcium deficiency. Offer oyster shell grit free-choice. If recurring, consult your poultry vet.", color:C.amber },
-  { label:"Calcium deposits",     icon:"🔵", advice:"Excess calcium or overcrowding in the shell gland. Usually harmless — monitor frequency.", color:C.blue },
-  { label:"Blood on shell",       icon:"🔴", advice:"Small streaks are normal for point-of-lay hens. If heavy or persistent, consult your vet.", color:C.red },
-  { label:"No shell (membrane)",  icon:"⚠️", advice:"Significant calcium or laying system issue. Remove immediately and speak to a poultry vet.", color:"#C0550C" },
-  { label:"Misshapen",            icon:"🫙", advice:"Can be caused by stress, infectious bronchitis or disruption. Vet check if recurring.", color:C.purple },
+const EGG_TYPES=[
+  {label:"Normal egg",icon:"🥚",advice:"Healthy egg — no concerns.",color:C.green},
+  {label:"Soft shell",icon:"🫧",advice:"May indicate calcium deficiency. Offer oyster shell grit. If recurring, consult your poultry vet.",color:C.amber},
+  {label:"Calcium deposits",icon:"🔵",advice:"Excess calcium in shell gland. Usually harmless — monitor frequency.",color:C.blue},
+  {label:"Blood on shell",icon:"🔴",advice:"Small streaks normal for point-of-lay. If heavy or persistent, consult your vet.",color:C.red},
+  {label:"No shell",icon:"⚠️",advice:"Significant calcium issue. Remove immediately and speak to a poultry vet.",color:"#C0550C"},
+  {label:"Misshapen",icon:"🫙",advice:"Can be caused by stress or disruption. Vet check if recurring.",color:C.purple},
 ];
-const SYMPTOMS = ["Lethargy","Loss of appetite","Sneezing","Watery eyes","Laboured breathing","Loose droppings","Blood in droppings","Swollen face/wattles","Limping","Feather loss","Pale comb","Reduced laying","Crop issues","Mite/lice signs","Discharge","Tail down"];
-const EGG_COUNTS = [2,3,1,3,2,3,2];
-const TODAY_LONG = new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-const VETS = [
-  { id:"v1", name:"Surrey Poultry Vet", vet:"Dr Henrietta Kodilinye-Sims BVetMed PgDipVEPH MRCVS", location:"Guildford, Surrey", tier:1, online:true, homeVisit:true, phone:null, bookingUrl:"https://www.surreypoultryvet.co.uk/book-poultry-consultation", website:"https://www.surreypoultryvet.co.uk", bhwt:true, flagged:false, caveat:null, note:"Video consultations nationally. Home visits from Guildford.", desc:"The leading dedicated poultry vet in SE England. Designed and taught the poultry medicine course at University of Surrey. Associate poultry editor of Vet Record. BVPA committee member.", quals:["BVetMed","PgDipVEPH","MRCVS","BVPA member","Univ. Surrey poultry lecturer"], species:["Chickens","Ducks","Turkeys","Gamebirds"], sources:["Own website","BHWT hen-friendly map","poultrykeeper.com","Univ. Surrey faculty records"], verified:"May 2026" },
-  { id:"v2", name:"RVC Beaumont Sainsbury Animal Hospital", vet:"Dr Victoria Baldrey BVSc DZooMed (Avian) MRCVS", location:"Camden, London NW1", tier:1, online:false, homeVisit:false, phone:"020 7387 8134", bookingUrl:"https://www.rvc.ac.uk/small-animal-vet/general-practice/book-an-appointment", website:"https://www.rvc.ac.uk/small-animal-vet/general-practice", bhwt:true, flagged:false, caveat:null, note:"OOH via Queen Mother Hospital: 01707 666399.", desc:"Most experienced avian team in London and SE England. Dr Baldrey holds DZooMed (Avian). Separate avian ward — hens kept away from predators.", quals:["DZooMed (Avian)","RCVS Recognised Specialist – avian","BVSc","MRCVS"], species:["Chickens","Waterfowl","Poultry","Parrots","Raptors"], sources:["RVC website — explicitly lists poultry & waterfowl","British Waterfowl Association","BHWT map","RCVS Find a Vet confirmed"], verified:"May 2026" },
-  { id:"v3", name:"Hunters Lodge Veterinary Practice", vet:"Mrs Helen Stephens BVetMed MRCVS / Mr Grant Smith BVSc MRCVS", location:"Ewhurst, Cranleigh, Surrey", tier:2, online:false, homeVisit:false, phone:"01483 276464", bookingUrl:null, website:"http://www.hunterslodgevets.co.uk", bhwt:false, flagged:false, caveat:"No specialist poultry qualification confirmed. Ask which vet has the most hen experience when booking.", note:"Good local option for Surrey keepers.", desc:"Mixed practice with confirmed poultry experience. Dedicated chickens section on website. Multiple independent reviews confirm hen treatment.", quals:["BVetMed MRCVS","BVSc MRCVS"], species:["Chickens","Small animals","Equine"], sources:["Own website — dedicated chickens page","Poultry Pages directory","TopVet reviews"], verified:"May 2026" },
-  { id:"v4", name:"South Downs Veterinary Consultancy", vet:"Dr Mark Elliott BVSc VetFFHom MRCVS", location:"Chichester, West Sussex", tier:2, online:false, homeVisit:false, phone:"01243 389911", bookingUrl:null, website:"https://www.southdownsvets.co.uk", bhwt:true, flagged:true, caveat:"Service significantly reduced since 2023 RCVS regulation change. Verify availability before any journey.", note:"⚠️ Backyard poultry by referral only since 2023. Contact before travelling.", desc:"Specialist gamebird practice. A 2023 RCVS regulatory change has limited ability to see backyard poultry first-opinion.", quals:["BVSc","VetFFHom","MRCVS"], species:["Gamebirds","Backyard Poultry (referral only)","Waterfowl"], sources:["Own website — confirms referral-only post-2023","BHWT map (caveat applies)","Legbars of Broadway"], verified:"May 2026" },
+const TODAY=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+const EGG_WEEK=[2,3,1,3,2,3,2];
+const MEMBERS=[
+  {id:"u1",name:"Sarah",av:"S",role:"Owner",online:true,color:C.green},
+  {id:"u2",name:"James",av:"J",role:"Co-keeper",online:true,color:C.blue},
+  {id:"u3",name:"Mum",av:"M",role:"Carer",online:false,color:C.textMuted},
 ];
-const VET_QUESTIONS = [
-  { q:"Do you have a vet who specifically has experience with pet hens or backyard poultry?", why:"Not all vets at a listed practice will have hen experience." },
-  { q:"Have you treated egg peritonitis, prolapse, bumblefoot, or red mite?", why:"These are the most common serious conditions. Hesitation signals limited experience." },
-  { q:"Are you familiar with prescribing for poultry as food-producing animals?", why:"UK law classifies pet hens as food-producing animals. Prescription rules differ from dogs and cats." },
-  { q:"Do you have experience with crop issues, respiratory disease, and egg binding?", why:"Critical conditions a general vet may not recognise quickly enough." },
-  { q:"What is your out-of-hours arrangement for avian patients?", why:"Birds deteriorate fast. Knowing the OOH option before an emergency could save your hen's life." },
-];
-const COMMUNITY_POSTS_DATA = [
-  { id:"p1", user:"HenKeeper_Jo", initials:"HJ", time:"2h ago", type:"question", content:"Has anyone dealt with a hen going broody in May? Dotty has been sitting on the nest for 3 days. She's eating and drinking but growls when I approach 😅", tags:["broody","behaviour"], likes:12, comments:8, location:"Surrey" },
-  { id:"p2", user:"ChickenMumKate", initials:"CK", time:"5h ago", type:"tip", content:"Proud of Buttercup — first egg after her moult! Shell was slightly rough so we've added extra oyster shell grit. Six weeks of patience paid off.", tags:["moult","laying"], likes:34, comments:5, location:"Kent" },
-  { id:"p3", user:"BackyardFlockUK", initials:"BF", time:"Yesterday", type:"welfare_win", content:"Red mite populations EXPLODE in warm weather. Check perches every 3–4 days with a torch. Diatomaceous earth in coop corners as first line of defence.", tags:["red mite","prevention"], likes:67, comments:14, location:"Sussex" },
-];
+const SYMPTOMS=["Lethargy","Loss of appetite","Sneezing","Watery eyes","Laboured breathing","Loose droppings","Blood in droppings","Swollen face/wattles","Limping","Feather loss","Pale comb","Reduced laying","Crop issues","Mite/lice signs","Discharge","Tail down"];
 
-// ─── SHARED UI ────────────────────────────────────────────────────────────────
-function toBase64(file) {
-  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
+// ── SHARED UI ─────────────────────────────────────────────────────────────────
+function Pill({label,type="ok"}){
+  const s={ok:{bg:C.greenLight,c:C.green},warn:{bg:C.amberLight,c:C.amber},alert:{bg:C.redLight,c:C.red},blue:{bg:C.blueLight,c:C.blue},muted:{bg:C.bgMuted,c:C.textMuted}};
+  const t=s[type]||s.ok;
+  return <span style={{background:t.bg,color:t.c,borderRadius:20,padding:"3px 10px",fontSize:11,fontFamily:FS.sans,fontWeight:500,whiteSpace:"nowrap",display:"inline-block"}}>{label}</span>;
 }
-const FeatherIcon = ({size=26,color="#B89A6A"})=>(
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/>
-  </svg>
-);
-const NavCare=({a})=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>;
-const NavFlock=({a})=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><circle cx="9" cy="7" r="3"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>;
-const NavHealth=({a})=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>;
-const NavVets=({a})=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
-const NavComm=({a})=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
-
-function WhiteCard({children,style}){return <div style={{background:C.bgCard,borderRadius:16,padding:"16px 18px",border:`1px solid ${C.borderLight}`,boxShadow:"0 1px 4px rgba(0,0,0,0.04)",...style}}>{children}</div>;}
-function MutedCard({children,style}){return <div style={{background:C.bgMuted,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`,...style}}>{children}</div>;}
-function GreenCard({children,style}){return <div style={{background:C.green,borderRadius:16,padding:"18px 20px",...style}}>{children}</div>;}
-function StatusPill({label,type="ok"}){
-  const S={ok:{bg:C.greenLight,color:C.green,border:`1px solid ${C.green}33`},warn:{bg:C.amberLight,color:C.amber,border:`1px solid ${C.amber}44`},alert:{bg:C.redLight,color:C.red,border:`1px solid ${C.red}44`},blue:{bg:C.blueLight,color:C.blue,border:`1px solid ${C.blue}44`},muted:{bg:C.bgMuted,color:C.textMuted,border:`1px solid ${C.border}`},memorial:{bg:"#F0EAF5",color:"#7A5E9A",border:"1px solid #C4A8D844"}};
-  const s=S[type]||S.ok;
-  return <span style={{background:s.bg,color:s.color,border:s.border,borderRadius:20,padding:"3px 10px",fontSize:11,fontFamily:GS.fontSans,fontWeight:500,whiteSpace:"nowrap"}}>{label}</span>;
-}
-function SectionTitle({title,sub,action,onAction}){
-  return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div><div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:C.text}}>{title}</div>{sub&&<div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginTop:1}}>{sub}</div>}</div>{action&&<button onClick={onAction} style={{background:C.green,color:"#fff",border:"none",borderRadius:22,padding:"8px 16px",fontFamily:GS.fontSans,fontSize:12.5,fontWeight:500,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:15}}>+</span>{action}</button>}</div>;
-}
-function SubTabBar({tabs,active,onChange}){
-  return <div style={{display:"flex",background:C.bgMuted,borderRadius:12,padding:4,marginBottom:18,border:`1px solid ${C.border}`}}>{tabs.map(t=><button key={t.key} onClick={()=>onChange(t.key)} style={{flex:1,background:active===t.key?C.bgCard:"transparent",color:active===t.key?C.text:C.textMuted,border:"none",borderRadius:9,padding:"8px 4px",fontSize:12,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:active===t.key?600:400,boxShadow:active===t.key?"0 1px 4px rgba(0,0,0,0.07)":"none",transition:"all 0.2s"}}>{t.label}</button>)}</div>;
-}
-function CheckItem({task,checked,onChange}){
-  return <div onClick={onChange} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}}>
-    <div style={{width:22,height:22,borderRadius:7,border:`1.5px solid ${checked?C.green:C.border}`,background:checked?C.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>
-      {checked&&<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+function WCard({children,style}){return <div style={{background:C.bgCard,borderRadius:16,padding:"16px 18px",border:`1px solid ${C.borderLight}`,boxShadow:"0 1px 4px rgba(0,0,0,0.04)",marginBottom:14,...style}}>{children}</div>;}
+function MCard({children,style}){return <div style={{background:C.bgMuted,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:14,...style}}>{children}</div>;}
+function GCard({children,style}){return <div style={{background:C.green,borderRadius:16,padding:"18px 20px",marginBottom:14,...style}}>{children}</div>;}
+function SecTitle({title,sub,action,onAction}){
+  return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+    <div>
+      <div style={{fontFamily:FS.serif,fontSize:22,fontWeight:600,color:C.text}}>{title}</div>
+      {sub&&<div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted,marginTop:1}}>{sub}</div>}
     </div>
-    <div style={{flex:1}}><div style={{fontFamily:GS.fontSans,fontSize:14,color:checked?C.textMuted:C.text,textDecoration:checked?"line-through":"none",fontWeight:500}}>{task.label}</div><div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginTop:1}}>{task.sub}</div></div>
+    {action&&<button onClick={onAction} style={{background:C.green,color:"#fff",border:"none",borderRadius:22,padding:"8px 16px",fontFamily:FS.sans,fontSize:12.5,fontWeight:500,cursor:"pointer"}}>+ {action}</button>}
   </div>;
 }
-function UserAvatar({initials,size=36,bg,color}){return <div style={{width:size,height:size,borderRadius:"50%",background:bg||C.greenLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.36,fontFamily:GS.fontSans,fontWeight:700,color:color||C.green,flexShrink:0}}>{initials}</div>;}
-function AIBox({label,content,color=C.green}){
-  return <div style={{background:color+"0D",border:`1px solid ${color}33`,borderRadius:12,padding:"14px 16px",marginTop:12}}>
-    <div style={{fontFamily:GS.fontSerif,fontWeight:600,fontSize:14,color,marginBottom:6}}>{label}</div>
-    <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{content}</div>
-    <div style={{marginTop:10,fontSize:11,color:C.textMuted,fontStyle:"italic",fontFamily:GS.fontSans}}>⚕️ Not veterinary advice — always consult a poultry vet.</div>
-  </div>;
+function UAvatar({ini,size=36,bg,col}){
+  return <div style={{width:size,height:size,borderRadius:"50%",background:bg||C.greenLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.38,fontFamily:FS.sans,fontWeight:700,color:col||C.green,flexShrink:0}}>{ini}</div>;
 }
-function SeasonTip(){
-  return <div style={{background:C.goldLight,border:`1px solid ${C.goldBorder}`,borderRadius:14,padding:"13px 16px",marginBottom:18,display:"flex",gap:12,alignItems:"flex-start"}}>
-    <span style={{fontSize:22,flexShrink:0}}>☀️</span>
-    <div><div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.green,marginBottom:3}}>Summer Care</div><div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMid,lineHeight:1.65}}>Red mite populations spike in warm weather. Check perches every 3–4 days. Ensure fresh cool water is always available.</div></div>
-  </div>;
-}
-
-// ─── HEN AVATAR (photo or emoji) ─────────────────────────────────────────────
-function HenAvatar({hen,size=44}){
+function HenAv({hen,size=44}){
   if(hen.photo){
-    const scale=hen.photoScale||1;
-    const ox=hen.photoOffsetX||0;
-    const oy=hen.photoOffsetY||0;
+    const sc=hen.photoScale||1,ox=hen.photoOffsetX||0,oy=hen.photoOffsetY||0;
     return <div style={{width:size,height:size,borderRadius:size/3,overflow:"hidden",border:`2px solid ${hen.color}55`,flexShrink:0,position:"relative"}}>
-      <img src={hen.photo} alt={hen.name} style={{position:"absolute",width:`${scale*100}%`,height:`${scale*100}%`,objectFit:"cover",left:`${50+ox}%`,top:`${50+oy}%`,transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
+      <img src={hen.photo} alt={hen.name} style={{position:"absolute",width:`${sc*100}%`,height:`${sc*100}%`,objectFit:"cover",left:`${50+ox}%`,top:`${50+oy}%`,transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
     </div>;
   }
   return <div style={{width:size,height:size,borderRadius:size/3,background:hen.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.48,border:`1.5px solid ${hen.color}44`,flexShrink:0}}>{hen.emoji||"🐓"}</div>;
 }
+function SubTabs({tabs,active,onChange}){
+  return <div style={{display:"flex",background:C.bgMuted,borderRadius:12,padding:4,marginBottom:18,border:`1px solid ${C.border}`}}>
+    {tabs.map(t=><button key={t.key} onClick={()=>onChange(t.key)} style={{flex:1,background:active===t.key?C.bgCard:"transparent",color:active===t.key?C.text:C.textMuted,border:"none",borderRadius:9,padding:"8px 4px",fontSize:11.5,cursor:"pointer",fontFamily:FS.sans,fontWeight:active===t.key?600:400,boxShadow:active===t.key?"0 1px 4px rgba(0,0,0,0.07)":"none"}}>{t.label}</button>)}
+  </div>;
+}
+function ChkItem({task,checked,onChange}){
+  return <div onClick={onChange} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:`1px solid ${C.borderLight}`,cursor:"pointer"}}>
+    <div style={{width:22,height:22,borderRadius:7,border:`1.5px solid ${checked?C.green:C.border}`,background:checked?C.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      {checked&&<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+    </div>
+    <div style={{flex:1}}>
+      <div style={{fontFamily:FS.sans,fontSize:14,color:checked?C.textMuted:C.text,textDecoration:checked?"line-through":"none",fontWeight:500}}>{task.label}</div>
+      <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted,marginTop:1}}>{task.sub}</div>
+    </div>
+  </div>;
+}
+function AIBox({label,content,color=C.green}){
+  return <div style={{background:color+"0D",border:`1px solid ${color}33`,borderRadius:12,padding:"14px 16px",marginTop:12}}>
+    <div style={{fontFamily:FS.serif,fontWeight:600,fontSize:14,color,marginBottom:6}}>{label}</div>
+    <div style={{fontFamily:FS.sans,fontSize:13,color:C.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{content}</div>
+    <div style={{marginTop:8,fontSize:11,color:C.textMuted,fontStyle:"italic"}}>⚕️ Not veterinary advice — always consult a poultry vet.</div>
+  </div>;
+}
 
-// ─── PHOTO CROP EDITOR ───────────────────────────────────────────────────────
-function PhotoCropEditor({src,scale,offsetX,offsetY,onScale,onOffset,onReset,onConfirm}){
-  const containerRef=useRef();
+// KEY FIX: StableInput never re-renders from parent, keyboard stays up always
+const StableInput = React.memo(function StableInput({defaultValue, onBlurSave, placeholder, style, type, inputRef}){
+  return <input
+    ref={inputRef}
+    type={type||"text"}
+    defaultValue={defaultValue||""}
+    onBlur={e=>onBlurSave(e.target.value)}
+    placeholder={placeholder||""}
+    autoComplete="off"
+    autoCorrect="off"
+    autoCapitalize="sentences"
+    style={{...style, fontSize:"16px"}}
+  />;
+});
+
+const StableTextarea = React.memo(function StableTextarea({defaultValue, onBlurSave, placeholder, style}){
+  return <textarea
+    defaultValue={defaultValue||""}
+    onBlur={e=>onBlurSave(e.target.value)}
+    placeholder={placeholder||""}
+    autoComplete="off"
+    style={{...style, fontSize:"16px"}}
+  />;
+});
+
+// ── PHOTO CROP ────────────────────────────────────────────────────────────────
+function PhotoCrop({src,scale,ox,oy,onScale,onOffset,onReset,onConfirm}){
   const dragging=useRef(false);
-  const lastPos=useRef({x:0,y:0});
-
-  const onMouseDown=e=>{dragging.current=true;lastPos.current={x:e.clientX,y:e.clientY};e.preventDefault();};
-  const onMouseMove=e=>{
+  const last=useRef({x:0,y:0});
+  const onTD=e=>{dragging.current=true;last.current={x:e.touches[0].clientX,y:e.touches[0].clientY};};
+  const onTM=e=>{
     if(!dragging.current)return;
-    const dx=((e.clientX-lastPos.current.x)/120)*10;
-    const dy=((e.clientY-lastPos.current.y)/120)*10;
-    lastPos.current={x:e.clientX,y:e.clientY};
-    onOffset(ox=>Math.max(-40,Math.min(40,ox+dx)),oy=>Math.max(-40,Math.min(40,oy+dy)));
-  };
-  const onMouseUp=()=>{dragging.current=false;};
-  const onTouchStart=e=>{dragging.current=true;lastPos.current={x:e.touches[0].clientX,y:e.touches[0].clientY};};
-  const onTouchMove=e=>{
-    if(!dragging.current)return;
-    const dx=((e.touches[0].clientX-lastPos.current.x)/120)*10;
-    const dy=((e.touches[0].clientY-lastPos.current.y)/120)*10;
-    lastPos.current={x:e.touches[0].clientX,y:e.touches[0].clientY};
-    onOffset(ox=>Math.max(-40,Math.min(40,ox+dx)),oy=>Math.max(-40,Math.min(40,oy+dy)));
+    const dx=((e.touches[0].clientX-last.current.x)/100)*8;
+    const dy=((e.touches[0].clientY-last.current.y)/100)*8;
+    last.current={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    onOffset(p=>Math.max(-40,Math.min(40,p+dx)),p=>Math.max(-40,Math.min(40,p+dy)));
     e.preventDefault();
   };
-
-  return <div style={{background:C.bgMuted,borderRadius:16,padding:"18px",border:`1px solid ${C.border}`,marginBottom:14}}>
-    <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.text,marginBottom:4}}>Adjust your photo</div>
-    <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginBottom:14,lineHeight:1.5}}>Drag to move · use slider to zoom · tap Reset to start again</div>
-
-    {/* Circle preview — drag to pan */}
+  return <div style={{background:C.bgMuted,borderRadius:16,padding:18,border:`1px solid ${C.border}`,marginBottom:14}}>
+    <div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.text,marginBottom:3}}>Adjust your photo</div>
+    <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted,marginBottom:14}}>Drag to move · slider to zoom</div>
     <div style={{display:"flex",justifyContent:"center",marginBottom:18}}>
-      <div
-        ref={containerRef}
-        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={()=>{dragging.current=false;}}
-        style={{width:120,height:120,borderRadius:24,overflow:"hidden",border:`3px solid ${C.green}`,cursor:"grab",position:"relative",touchAction:"none",userSelect:"none",flexShrink:0}}>
-        <img src={src} alt="preview" style={{position:"absolute",width:`${scale*100}%`,height:`${scale*100}%`,objectFit:"cover",left:`${50+offsetX}%`,top:`${50+offsetY}%`,transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
-        {/* Grid overlay */}
-        <div style={{position:"absolute",inset:0,backgroundImage:`linear-gradient(${C.green}22 1px,transparent 1px),linear-gradient(90deg,${C.green}22 1px,transparent 1px)`,backgroundSize:"40px 40px",pointerEvents:"none"}}/>
+      <div onTouchStart={onTD} onTouchMove={onTM} onTouchEnd={()=>{dragging.current=false;}}
+        style={{width:130,height:130,borderRadius:26,overflow:"hidden",border:`3px solid ${C.green}`,position:"relative",touchAction:"none",userSelect:"none"}}>
+        <img src={src} alt="preview" style={{position:"absolute",width:`${scale*100}%`,height:`${scale*100}%`,objectFit:"cover",left:`${50+ox}%`,top:`${50+oy}%`,transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
       </div>
     </div>
-
-    {/* Zoom slider */}
     <div style={{marginBottom:14}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted}}>Zoom</span>
-        <span style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted}}>{Math.round(scale*100)}%</span>
+        <span style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted}}>Zoom</span>
+        <span style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted}}>{Math.round(scale*100)}%</span>
       </div>
-      <input type="range" min="50" max="200" step="1" value={scale*100}
-        onChange={e=>onScale(Number(e.target.value)/100)}
-        style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
-      <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
-        <span style={{fontFamily:GS.fontSans,fontSize:10,color:C.textMuted}}>Zoom out</span>
-        <span style={{fontFamily:GS.fontSans,fontSize:10,color:C.textMuted}}>Zoom in</span>
-      </div>
+      <input type="range" min="50" max="200" step="1" value={scale*100} onChange={e=>onScale(Number(e.target.value)/100)} style={{width:"100%",accentColor:C.green,fontSize:"16px"}}/>
     </div>
-
-    {/* Controls */}
     <div style={{display:"flex",gap:9}}>
-      <button onClick={onConfirm} style={{flex:1,background:C.green,color:"#fff",border:"none",borderRadius:10,padding:"10px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",fontWeight:500}}>Use this photo ✓</button>
-      <button onClick={onReset} style={{background:C.bgCard,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer"}}>Reset</button>
+      <button onClick={onConfirm} style={{flex:1,background:C.green,color:"#fff",border:"none",borderRadius:10,padding:"12px 0",fontFamily:FS.sans,fontSize:14,cursor:"pointer",fontWeight:500}}>Use this photo ✓</button>
+      <button onClick={onReset} style={{background:C.bgCard,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",fontFamily:FS.sans,fontSize:14,cursor:"pointer"}}>Reset</button>
     </div>
   </div>;
 }
 
-// ─── WELFARE CONDITIONS (persistent per-hen) ─────────────────────────────────
-const WELFARE_CONDITIONS = [
-  { id:"bumblefoot",     label:"Bumblefoot",              options:["No signs","Mild swelling","Open wound / severe"],    icon:"🦶" },
-  { id:"comb",           label:"Comb condition",          options:["Red & upright","Pale / drooping","Purple or scabby"], icon:"🌹" },
-  { id:"abdomen",        label:"Abdomen",                 options:["Soft & normal","Slightly distended","Hard / fluid"],  icon:"🫃" },
-  { id:"lice_mites",     label:"Lice / mites",            options:["Clear","Some signs","Active infestation"],           icon:"🔬" },
-  { id:"feather_loss",   label:"Feather loss",            options:["None","Mild patching","Significant loss"],           icon:"🪶" },
-  { id:"worms",          label:"Worm burden",             options:["Not suspected","Suspected","Confirmed / treating"],  icon:"🪱" },
-  { id:"tumour",         label:"Lumps / tumours",         options:["None felt","Possible lump","Confirmed / monitored"], icon:"⚠️" },
-  { id:"respiratory",    label:"Respiratory signs",       options:["Clear","Occasional wheeze","Persistent / laboured"], icon:"💨" },
-  { id:"eye_discharge",  label:"Eye discharge",           options:["Clear","Mild","Significant / swollen"],             icon:"👁️" },
-  { id:"mobility",       label:"Mobility",                options:["Normal","Slight limp","Lame / can't weight-bear"],   icon:"🚶" },
-];
-
-const WELFARE_OPTION_COLORS = ["ok","warn","alert"];
-
-// ─── HEN FORM (Add / Edit) ───────────────────────────────────────────────────
-// KEY FIX: All text inputs use local controlled refs so the keyboard
-// never dismisses mid-typing. We only merge into form state on blur.
-
-function HenForm({initial,onSave,onCancel,onDelete,onMemorial}){
-  // Split out text fields into separate local state to prevent keyboard dismissal
-  const [name, setName] = useState(initial?.name || "");
-  const [age,  setAge]  = useState(initial?.age  || "");
-  const [notes,setNotes]= useState(initial?.notes|| "");
-  const [memNote, setMemNote] = useState("");
-  const [memDate, setMemDate] = useState("");
+// ── HEN FORM ──────────────────────────────────────────────────────────────────
+// Uses uncontrolled inputs (defaultValue + onBlur) so keyboard NEVER dismisses
+function HenForm({initial, onSave, onCancel, onDelete, onMemorial}){
+  // Use refs to hold latest values without causing re-renders
+  const nameRef = useRef(initial?.name||"");
+  const ageRef  = useRef(initial?.age||"");
+  const notesRef= useRef(initial?.notes||"");
+  const memDateRef = useRef("");
+  const memNoteRef = useRef("");
+  const newMedRef  = useRef("");
 
   const [form, setForm] = useState({
-    ...(initial || {...EMPTY_HEN}),
-    meds: initial?.meds || [],
-    welfare: initial?.welfare || {},
+    breed: initial?.breed||"",
+    dob:   initial?.dob||"",
+    color: initial?.color||HEN_COLORS[0],
+    emoji: initial?.emoji||"🐓",
+    inLay: initial?.inLay||false,
+    photo: initial?.photo||null,
+    photoScale:   initial?.photoScale||1,
+    photoOffsetX: initial?.photoOffsetX||0,
+    photoOffsetY: initial?.photoOffsetY||0,
+    meds:    initial?.meds||[],
+    welfare: initial?.welfare||{},
   });
+  const [rawPhoto,   setRawPhoto]   = useState(initial?.photo||null);
+  const [editPhoto,  setEditPhoto]  = useState(false);
+  const [cropScale,  setCropScale]  = useState(initial?.photoScale||1);
+  const [cropX,      setCropX]      = useState(initial?.photoOffsetX||0);
+  const [cropY,      setCropY]      = useState(initial?.photoOffsetY||0);
+  const [detecting,  setDetecting]  = useState(false);
+  const [breedAI,    setBreedAI]    = useState(null);
+  const [showMem,    setShowMem]    = useState(false);
+  const [medInput,   setMedInput]   = useState(""); // only one controlled input - for add button enable
+  const fileRef = useRef();
 
-  const [rawPhoto,      setRawPhoto]      = useState(initial?.photo || null);
-  const [editingPhoto,  setEditingPhoto]  = useState(false);
-  const [cropScale,     setCropScale]     = useState(initial?.photoScale    || 1);
-  const [cropX,         setCropX]         = useState(initial?.photoOffsetX  || 0);
-  const [cropY,         setCropY]         = useState(initial?.photoOffsetY  || 0);
-  const [showMemorial,  setShowMemorial]  = useState(false);
-  const [detectingBreed,setDetectingBreed]= useState(false);
-  const [breedSuggestion,setBreedSugg]   = useState(null);
-  const [newMed,        setNewMed]        = useState("");
-  const [medEnd,        setMedEnd]        = useState("");
-  const photoRef = useRef();
+  const iS = {
+    width:"100%", padding:"14px", borderRadius:10,
+    border:`1px solid ${C.border}`, fontFamily:FS.sans,
+    fontSize:"16px", color:C.text, background:C.bgMuted,
+    outline:"none", boxSizing:"border-box", WebkitAppearance:"none",
+    display:"block",
+  };
 
   const handleFile = e => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      setRawPhoto(ev.target.result);
-      setCropScale(1); setCropX(0); setCropY(0);
-      setEditingPhoto(true);
-      setBreedSugg(null);
-    };
-    reader.readAsDataURL(file);
+    const file = e.target.files[0]; if(!file) return;
+    const r = new FileReader();
+    r.onload = ev => { setRawPhoto(ev.target.result); setCropScale(1); setCropX(0); setCropY(0); setEditPhoto(true); setBreedAI(null); };
+    r.readAsDataURL(file);
   };
 
   const confirmCrop = async () => {
-    setForm(f => ({...f, photo:rawPhoto, photoScale:cropScale, photoOffsetX:cropX, photoOffsetY:cropY}));
-    setEditingPhoto(false);
-    // Auto-detect breed from photo
-    setDetectingBreed(true);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:400,
-          messages:[{ role:"user", content:[
-            { type:"image", source:{type:"base64", media_type:"image/jpeg", data: rawPhoto.split(",")[1] || rawPhoto }},
-            { type:"text",  text:`You are an expert in UK chicken breeds. Look at this photo and identify the most likely breed. Respond with ONLY a JSON object like: {"breed":"Rhode Island Red","confidence":"high","alternatives":["Warren","ISA Brown"],"notes":"Typical reddish-brown plumage and single comb"}. Confidence should be high/medium/low. If you cannot determine the breed from the photo, return {"breed":"Unknown","confidence":"low","alternatives":[],"notes":"Photo not clear enough to identify breed"}. Return ONLY the JSON, no other text.`}
-          ]}]
-        })
-      });
+    setForm(f=>({...f,photo:rawPhoto,photoScale:cropScale,photoOffsetX:cropX,photoOffsetY:cropY}));
+    setEditPhoto(false);
+    setDetecting(true);
+    try{
+      const b64 = rawPhoto.includes(",") ? rawPhoto.split(",")[1] : rawPhoto;
+      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:300,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},{type:"text",text:'Identify this chicken breed. Reply ONLY with JSON: {"breed":"name","confidence":"high/medium/low","alternatives":["alt1"],"notes":"brief reason"}'}]}]})});
       const d = await res.json();
-      const text = d.content?.map(b=>b.text||"").join("").trim();
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
-      setBreedSugg(parsed);
-      if (parsed.breed && parsed.breed !== "Unknown" && parsed.confidence !== "low") {
-        setForm(f => ({...f, breed: parsed.breed}));
-      }
-    } catch(e) {
-      setBreedSugg({breed:"Unknown", confidence:"low", alternatives:[], notes:"Could not analyse photo"});
-    }
-    setDetectingBreed(false);
+      const txt = d.content?.map(b=>b.text||"").join("").trim().replace(/```json|```/g,"").trim();
+      const parsed = JSON.parse(txt);
+      setBreedAI(parsed);
+      if(parsed.confidence!=="low") setForm(f=>({...f,breed:parsed.breed}));
+    }catch(e){ setBreedAI(null); }
+    setDetecting(false);
   };
-
-  const resetPhoto = () => { setRawPhoto(null); setForm(f=>({...f,photo:null})); setEditingPhoto(false); setBreedSugg(null); };
 
   const addMed = () => {
-    if (!newMed.trim()) return;
-    const entry = newMed + (medEnd ? ` (until ${medEnd})` : "");
-    setForm(f => ({...f, meds:[...f.meds, entry]}));
-    setNewMed(""); setMedEnd("");
+    const val = newMedRef.current.trim();
+    if(!val) return;
+    setForm(f=>({...f,meds:[...(f.meds||[]),val]}));
+    setMedInput("");
+    newMedRef.current = "";
+    // Clear the actual input element
+    const el = document.getElementById("new-med-input");
+    if(el) el.value = "";
   };
-  const removeMed = idx => setForm(f => ({...f, meds:f.meds.filter((_,i)=>i!==idx)}));
 
-  const setWelfare = (id, val) => setForm(f => ({...f, welfare:{...f.welfare,[id]:val}}));
-
-  const buildFinalForm = () => ({
-    ...form,
-    name: name.trim(),
-    age:  age.trim(),
-    notes: notes.trim(),
-    photoScale: cropScale,
-    photoOffsetX: cropX,
-    photoOffsetY: cropY,
-  });
-
-  const valid = name.trim().length > 0;
-
-  const iStyle = {
-    width:"100%", padding:"10px 13px", borderRadius:9,
-    border:`1px solid ${C.border}`, fontFamily:GS.fontSans,
-    fontSize:13, color:C.text, background:C.bgMuted,
-    outline:"none", boxSizing:"border-box",
+  const save = () => {
+    const name = nameRef.current.trim();
+    if(!name) return;
+    onSave({...form, name, age:ageRef.current.trim(), notes:notesRef.current.trim()});
   };
-  const F = ({label, children}) => (
-    <div style={{marginBottom:16}}>
-      <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:7}}>{label}</div>
-      {children}
-    </div>
-  );
 
-  // ── Memorial screen ───────────────────────────────────────────────────────
-  if (showMemorial) return (
-    <div>
-      <div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:C.text,marginBottom:6}}>🕊️ In Memory of {name||initial?.name}</div>
-      <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,lineHeight:1.65,marginBottom:20}}>She will be moved to your memorial archive. Her diary, photos and records will be preserved forever.</div>
-      <F label="Date she passed">
-        <input type="date" value={memDate} onChange={e=>setMemDate(e.target.value)} style={iStyle}/>
-      </F>
-      <F label="A note to remember her (optional)">
-        <textarea value={memNote} onChange={e=>setMemNote(e.target.value)}
-          placeholder={`e.g. ${name||"She"} was the boldest of the flock, always first to the feeder…`}
-          style={{...iStyle, minHeight:90, resize:"vertical", lineHeight:1.6}}/>
-      </F>
+  if(showMem) return (
+    <div style={{paddingBottom:40}}>
+      <div style={{fontFamily:FS.serif,fontSize:22,fontWeight:600,color:C.text,marginBottom:8}}>🕊️ In Memory of {nameRef.current||initial?.name}</div>
+      <div style={{fontFamily:FS.sans,fontSize:13,color:C.textMid,lineHeight:1.65,marginBottom:20}}>She will be moved to your memorial archive. Her diary, photos and records will be preserved forever.</div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Date she passed</div>
+        <input type="date" defaultValue="" onBlur={e=>memDateRef.current=e.target.value} style={iS}/>
+      </div>
+      <div style={{marginBottom:20}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>A note to remember her</div>
+        <textarea defaultValue="" onBlur={e=>memNoteRef.current=e.target.value} placeholder="e.g. She was the boldest of the flock…" style={{...iS,minHeight:90,resize:"vertical",lineHeight:1.6}}/>
+      </div>
       <div style={{display:"flex",gap:9}}>
-        <button onClick={()=>onMemorial({...buildFinalForm(),passedDate:memDate,memorialNote:memNote})}
-          style={{flex:1,background:"#7A5E9A",color:"#fff",border:"none",borderRadius:11,padding:"12px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",fontWeight:500}}>
-          🕊️ Move to Memorial
-        </button>
-        <button onClick={()=>setShowMemorial(false)} style={{background:C.bgMuted,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:11,padding:"12px 14px",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer"}}>Cancel</button>
+        <button onClick={()=>onMemorial({...form,name:nameRef.current,age:ageRef.current,notes:notesRef.current,passedDate:memDateRef.current,memorialNote:memNoteRef.current})} style={{flex:1,background:"#7A5E9A",color:"#fff",border:"none",borderRadius:11,padding:"14px 0",fontFamily:FS.sans,fontSize:14,cursor:"pointer",fontWeight:500}}>🕊️ Move to Memorial</button>
+        <button onClick={()=>setShowMem(false)} style={{background:C.bgMuted,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",fontFamily:FS.sans,fontSize:14,cursor:"pointer"}}>Cancel</button>
       </div>
     </div>
   );
 
-  // ── Main form ─────────────────────────────────────────────────────────────
   return (
-    <div>
-      <div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:C.text,marginBottom:20}}>
-        {initial ? `Edit ${initial.name}` : "Add a Hen"}
-      </div>
+    <div style={{paddingBottom:60}}>
+      <div style={{fontFamily:FS.serif,fontSize:24,fontWeight:600,color:C.text,marginBottom:22}}>{initial?`Edit ${initial.name}`:"Add a Hen"}</div>
 
-      {/* ── PHOTO ── */}
-      <F label="Photo">
-        {editingPhoto && rawPhoto
-          ? <PhotoCropEditor src={rawPhoto} scale={cropScale} offsetX={cropX} offsetY={cropY}
+      {/* Photo */}
+      <div style={{marginBottom:18}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Photo</div>
+        {editPhoto && rawPhoto
+          ? <PhotoCrop src={rawPhoto} scale={cropScale} ox={cropX} oy={cropY}
               onScale={s=>setCropScale(s)}
               onOffset={(fx,fy)=>{setCropX(p=>typeof fx==="function"?fx(p):fx);setCropY(p=>typeof fy==="function"?fy(p):fy);}}
-              onReset={resetPhoto} onConfirm={confirmCrop}/>
-          : <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:4}}>
-              <div onClick={()=>photoRef.current.click()} style={{width:76,height:76,borderRadius:18,overflow:"hidden",border:`2px dashed ${C.border}`,background:C.bgMuted,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,position:"relative"}}>
-                {form.photo ? <HenAvatar hen={form} size={76}/> : <div style={{textAlign:"center"}}><div style={{fontSize:28}}>{form.emoji}</div><div style={{fontFamily:GS.fontSans,fontSize:10,color:C.textMuted,marginTop:3}}>Tap to add</div></div>}
-                <div style={{position:"absolute",bottom:0,right:0,width:22,height:22,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #fff"}}>
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              onReset={()=>{setRawPhoto(null);setForm(f=>({...f,photo:null}));setEditPhoto(false);}}
+              onConfirm={confirmCrop}/>
+          : <div style={{display:"flex",alignItems:"center",gap:16}}>
+              <div onClick={()=>fileRef.current.click()} style={{width:80,height:80,borderRadius:20,overflow:"hidden",border:`2px dashed ${C.border}`,background:C.bgMuted,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,position:"relative"}}>
+                {form.photo ? <HenAv hen={form} size={80}/> : <div style={{textAlign:"center"}}><div style={{fontSize:28}}>{form.emoji}</div><div style={{fontFamily:FS.sans,fontSize:10,color:C.textMuted,marginTop:3}}>Tap</div></div>}
+                <div style={{position:"absolute",bottom:0,right:0,width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #fff"}}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
               </div>
               <div>
-                <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,fontWeight:500,marginBottom:3}}>Upload a photo of your hen</div>
-                <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,lineHeight:1.5}}>AI will suggest her breed automatically</div>
-                {form.photo && <>
-                  <button onClick={()=>setEditingPhoto(true)} style={{background:"none",border:"none",color:C.blue,fontFamily:GS.fontSans,fontSize:12,cursor:"pointer",padding:"4px 0 0 0",display:"block"}}>Re-adjust photo</button>
-                  <button onClick={resetPhoto} style={{background:"none",border:"none",color:C.red,fontFamily:GS.fontSans,fontSize:12,cursor:"pointer",padding:"2px 0 0 0",display:"block"}}>Remove photo</button>
-                </>}
+                <div style={{fontFamily:FS.sans,fontSize:13,color:C.text,fontWeight:500,marginBottom:3}}>Upload a photo</div>
+                <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted,lineHeight:1.5}}>AI will suggest her breed</div>
+                {form.photo&&<button onClick={()=>setEditPhoto(true)} style={{background:"none",border:"none",color:C.blue,fontFamily:FS.sans,fontSize:12,cursor:"pointer",padding:"4px 0 0",display:"block"}}>Re-adjust</button>}
               </div>
             </div>}
-        <input ref={photoRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
-      </F>
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+      </div>
 
-      {/* ── AI BREED SUGGESTION ── */}
-      {detectingBreed && (
-        <div style={{background:C.goldLight,border:`1px solid ${C.goldBorder}`,borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:GS.fontSans,fontSize:13,color:C.textMid,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:18}}>🔍</span> Identifying breed from photo…
+      {detecting&&<div style={{background:C.goldLight,border:`1px solid ${C.goldBorder}`,borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:FS.sans,fontSize:13,color:C.textMid}}>🔍 Identifying breed…</div>}
+      {breedAI&&!detecting&&<div style={{background:C.greenLight,border:`1px solid ${C.green}44`,borderRadius:12,padding:"13px 15px",marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.green,marginBottom:5}}>✨ AI thinks: <strong>{breedAI.breed}</strong> <span style={{fontWeight:400,color:C.textMuted}}>({breedAI.confidence})</span></div>
+        {breedAI.notes&&<div style={{fontFamily:FS.sans,fontSize:12,color:C.textMid,marginBottom:8}}>{breedAI.notes}</div>}
+        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          <button onClick={()=>setForm(f=>({...f,breed:breedAI.breed}))} style={{background:C.green,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontFamily:FS.sans,fontSize:12,cursor:"pointer",fontWeight:500}}>✓ Use {breedAI.breed}</button>
+          {breedAI.alternatives?.map(a=><button key={a} onClick={()=>setForm(f=>({...f,breed:a}))} style={{background:C.bgCard,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 12px",fontFamily:FS.sans,fontSize:12,cursor:"pointer"}}>{a}</button>)}
         </div>
-      )}
-      {breedSuggestion && !detectingBreed && (
-        <div style={{background:C.greenLight,border:`1px solid ${C.green}44`,borderRadius:12,padding:"13px 15px",marginBottom:16}}>
-          <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.green,marginBottom:5}}>
-            ✨ AI thinks she might be: <strong>{breedSuggestion.breed}</strong>
-            <span style={{fontWeight:400,color:C.textMuted,marginLeft:6}}>({breedSuggestion.confidence} confidence)</span>
-          </div>
-          {breedSuggestion.notes && <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginBottom:8}}>{breedSuggestion.notes}</div>}
-          {breedSuggestion.alternatives?.length > 0 && (
-            <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginBottom:10}}>
-              Other possibilities: {breedSuggestion.alternatives.join(", ")}
-            </div>
-          )}
-          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-            <button onClick={()=>setForm(f=>({...f,breed:breedSuggestion.breed}))}
-              style={{background:C.green,color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontFamily:GS.fontSans,fontSize:12,cursor:"pointer",fontWeight:500}}>
-              ✓ Use {breedSuggestion.breed}
-            </button>
-            {breedSuggestion.alternatives?.map(a=>(
-              <button key={a} onClick={()=>setForm(f=>({...f,breed:a}))}
-                style={{background:C.bgCard,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",fontFamily:GS.fontSans,fontSize:12,cursor:"pointer"}}>
-                {a}
-              </button>
-            ))}
-          </div>
-          <button onClick={()=>setBreedSugg(null)} style={{background:"none",border:"none",color:C.textMuted,fontFamily:GS.fontSans,fontSize:11,cursor:"pointer",padding:"6px 0 0 0",display:"block"}}>
-            Dismiss — I'll choose manually
-          </button>
-        </div>
-      )}
+      </div>}
 
-      {/* ── NAME ── */}
-      <F label="Name *">
+      {/* NAME — uncontrolled */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Name *</div>
         <input
-          value={name}
-          onChange={e => setName(e.target.value)}
+          defaultValue={initial?.name||""}
+          onChange={e=>nameRef.current=e.target.value}
           placeholder="e.g. Margot"
-          autoComplete="off"
-          style={iStyle}
+          autoComplete="off" autoCorrect="off"
+          style={iS}
         />
-      </F>
+      </div>
 
-      {/* ── BREED ── */}
-      <F label="Breed">
-        <select value={form.breed} onChange={e=>setForm(f=>({...f,breed:e.target.value}))} style={{...iStyle,appearance:"none"}}>
+      {/* BREED */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Breed</div>
+        <select value={form.breed} onChange={e=>setForm(f=>({...f,breed:e.target.value}))} style={{...iS,backgroundImage:"url(\"data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 7L11 1' stroke='%239A9488' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E\")",backgroundRepeat:"no-repeat",backgroundPosition:"right 14px center",paddingRight:40}}>
           <option value="">Select breed…</option>
           {BREEDS.map(b=><option key={b} value={b}>{b}</option>)}
         </select>
-        {form.breed && <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.green,marginTop:4}}>✓ {form.breed} selected</div>}
-      </F>
+      </div>
 
-      {/* ── AGE / DOB ── */}
+      {/* AGE — uncontrolled */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div>
-          <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:7}}>Age</div>
-          <input value={age} onChange={e=>setAge(e.target.value)} placeholder="e.g. 2 yrs" autoComplete="off" style={iStyle}/>
+          <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Age</div>
+          <input defaultValue={initial?.age||""} onChange={e=>ageRef.current=e.target.value} placeholder="e.g. 2 yrs" autoComplete="off" style={iS}/>
         </div>
         <div>
-          <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:7}}>Date of birth</div>
-          <input type="date" value={form.dob} onChange={e=>setForm(f=>({...f,dob:e.target.value}))} style={iStyle}/>
+          <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Date of birth</div>
+          <input type="date" value={form.dob} onChange={e=>setForm(f=>({...f,dob:e.target.value}))} style={iS}/>
         </div>
       </div>
 
-      {/* ── EMOJI (if no photo) ── */}
-      {!form.photo && <F label="Icon (if no photo)">
-        <div style={{display:"flex",gap:8}}>{HEN_EMOJIS.map(e=><button key={e} onClick={()=>setForm(f=>({...f,emoji:e}))} style={{width:44,height:44,borderRadius:11,border:`2px solid ${form.emoji===e?C.green:C.border}`,background:form.emoji===e?C.greenLight:C.bgMuted,fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{e}</button>)}</div>
-      </F>}
+      {/* EMOJI */}
+      {!form.photo&&<div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Icon</div>
+        <div style={{display:"flex",gap:8}}>{EMOJIS.map(e=><button key={e} onClick={()=>setForm(f=>({...f,emoji:e}))} style={{width:46,height:46,borderRadius:12,border:`2px solid ${form.emoji===e?C.green:C.border}`,background:form.emoji===e?C.greenLight:C.bgMuted,fontSize:22,cursor:"pointer"}}>{e}</button>)}</div>
+      </div>}
 
-      {/* ── COLOUR ── */}
-      <F label="Colour accent">
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{HEN_COLORS.map(col=><button key={col} onClick={()=>setForm(f=>({...f,color:col}))} style={{width:30,height:30,borderRadius:"50%",background:col,border:`3px solid ${form.color===col?C.text:"transparent"}`,cursor:"pointer",outline:"none"}}/>)}</div>
-      </F>
+      {/* COLOUR */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Colour accent</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{HEN_COLORS.map(col=><button key={col} onClick={()=>setForm(f=>({...f,color:col}))} style={{width:34,height:34,borderRadius:"50%",background:col,border:`3px solid ${form.color===col?C.text:"transparent"}`,cursor:"pointer",outline:"none"}}/>)}</div>
+      </div>
 
-      {/* ── LAYING ── */}
-      <F label="Currently laying?">
-        <div style={{display:"flex",gap:8}}>{[{v:true,l:"Yes — in lay 🥚"},{v:false,l:"Not in lay"}].map(opt=><button key={String(opt.v)} onClick={()=>setForm(f=>({...f,inLay:opt.v}))} style={{flex:1,background:form.inLay===opt.v?C.green:C.bgMuted,color:form.inLay===opt.v?"#fff":C.text,border:`1px solid ${form.inLay===opt.v?C.green:C.border}`,borderRadius:10,padding:"9px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",fontWeight:form.inLay===opt.v?500:400}}>{opt.l}</button>)}</div>
-      </F>
+      {/* LAYING */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Currently laying?</div>
+        <div style={{display:"flex",gap:8}}>
+          {[{v:true,l:"Yes — in lay 🥚"},{v:false,l:"Not in lay"}].map(opt=>
+            <button key={String(opt.v)} onClick={()=>setForm(f=>({...f,inLay:opt.v}))} style={{flex:1,background:form.inLay===opt.v?C.green:C.bgMuted,color:form.inLay===opt.v?"#fff":C.text,border:`1px solid ${form.inLay===opt.v?C.green:C.border}`,borderRadius:10,padding:"12px 0",fontFamily:FS.sans,fontSize:14,cursor:"pointer",fontWeight:form.inLay===opt.v?500:400}}>{opt.l}</button>
+          )}
+        </div>
+      </div>
 
-      {/* ── MEDICATIONS ── */}
-      <F label="Medications & Treatments">
-        {form.meds.length > 0 && (
-          <div style={{marginBottom:10}}>
-            {form.meds.map((med,i) => (
-              <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:C.blueLight,border:`1px solid ${C.blue}33`,borderRadius:9,padding:"8px 12px",marginBottom:6}}>
-                <span style={{fontSize:16}}>💊</span>
-                <span style={{flex:1,fontFamily:GS.fontSans,fontSize:12.5,color:C.text}}>{med}</span>
-                <button onClick={()=>removeMed(i)} style={{background:"none",border:"none",color:C.red,fontSize:16,cursor:"pointer",padding:"0 2px",lineHeight:1}}>×</button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+      {/* MEDS */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Medications</div>
+        {(form.meds||[]).map((m,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,background:C.blueLight,border:`1px solid ${C.blue}33`,borderRadius:9,padding:"10px 12px",marginBottom:6}}>
+          <span style={{fontSize:16}}>💊</span><span style={{flex:1,fontFamily:FS.sans,fontSize:13,color:C.text}}>{m}</span>
+          <button onClick={()=>setForm(f=>({...f,meds:f.meds.filter((_,j)=>j!==i)}))} style={{background:"none",border:"none",color:C.red,fontSize:20,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>×</button>
+        </div>)}
+        <div style={{display:"flex",gap:8}}>
           <input
-            value={newMed}
-            onChange={e=>setNewMed(e.target.value)}
+            id="new-med-input"
+            defaultValue=""
+            onChange={e=>{newMedRef.current=e.target.value; setMedInput(e.target.value);}}
             onKeyDown={e=>e.key==="Enter"&&addMed()}
-            placeholder="e.g. Flubenvet, Ivermectin, Tylan…"
+            placeholder="e.g. Flubenvet, Ivermectin…"
             autoComplete="off"
-            style={iStyle}
+            style={{...iS,flex:1}}
           />
-          <div style={{display:"flex",gap:7}}>
-            <input type="date" value={medEnd} onChange={e=>setMedEnd(e.target.value)} style={{...iStyle,flex:1}} placeholder="End date (optional)"/>
-            <button onClick={addMed} disabled={!newMed.trim()} style={{background:newMed.trim()?C.blue:C.border,color:"#fff",border:"none",borderRadius:9,padding:"10px 14px",fontFamily:GS.fontSans,fontSize:13,cursor:newMed.trim()?"pointer":"default",fontWeight:500,whiteSpace:"nowrap"}}>+ Add</button>
-          </div>
+          <button onClick={addMed} style={{background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"12px 14px",fontFamily:FS.sans,fontSize:14,cursor:"pointer",fontWeight:500,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
-      </F>
-
-      {/* ── WELFARE CONDITIONS ── */}
-      <F label="Welfare & Health Conditions">
-        <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginBottom:10,lineHeight:1.5}}>
-          Set her current baseline — this stays on her profile and updates over time.
-        </div>
-        {WELFARE_CONDITIONS.map(cond => {
-          const val = form.welfare?.[cond.id] || 0;
-          const optColors = [C.greenLight, C.amberLight, C.redLight];
-          const optTextColors = [C.green, C.amber, C.red];
-          return (
-            <div key={cond.id} style={{marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.borderLight}`}}>
-              <div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.text,fontWeight:500,marginBottom:7}}>{cond.icon} {cond.label}</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {cond.options.map((opt,idx) => (
-                  <button key={opt} onClick={()=>setWelfare(cond.id, idx)}
-                    style={{
-                      background: val===idx ? optColors[idx] : C.bgMuted,
-                      color: val===idx ? optTextColors[idx] : C.textMid,
-                      border:`1.5px solid ${val===idx ? optTextColors[idx]+"55" : C.border}`,
-                      borderRadius:8, padding:"6px 11px",
-                      fontFamily:GS.fontSans, fontSize:11.5, cursor:"pointer",
-                      fontWeight: val===idx ? 600 : 400,
-                      transition:"all 0.15s",
-                    }}>
-                    {idx===0?"✅ ":idx===1?"⚠️ ":"🚨 "}{opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </F>
-
-      {/* ── NOTES ── */}
-      <F label="Notes (optional)">
-        <textarea
-          value={notes}
-          onChange={e=>setNotes(e.target.value)}
-          placeholder="e.g. rehomed March 2025, nervous around handling, loves sunflower seeds…"
-          style={{...iStyle, minHeight:80, resize:"vertical", lineHeight:1.6}}
-        />
-      </F>
-
-      {/* ── SAVE / CANCEL ── */}
-      <div style={{display:"flex",gap:9,marginTop:4}}>
-        <button onClick={()=>valid&&onSave(buildFinalForm())}
-          style={{flex:1,background:valid?C.green:C.border,color:"#fff",border:"none",borderRadius:11,padding:"13px 0",fontFamily:GS.fontSans,fontSize:14,cursor:valid?"pointer":"default",fontWeight:500}}>
-          {initial?"Save Changes":"Add to Flock ✓"}
-        </button>
-        <button onClick={onCancel} style={{background:C.bgMuted,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:11,padding:"13px 16px",fontFamily:GS.fontSans,fontSize:14,cursor:"pointer"}}>Cancel</button>
       </div>
 
-      {/* ── MEMORIAL / DELETE ── */}
-      {initial && <>
-        {onMemorial && <button onClick={()=>setShowMemorial(true)}
-          style={{width:"100%",marginTop:10,background:"#F5F0FB",color:"#7A5E9A",border:"1px solid #C4A8D844",borderRadius:11,padding:"11px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer"}}>
-          🕊️ {initial.name} has passed away…
-        </button>}
-        {onDelete && <button onClick={onDelete}
-          style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.red}44`,color:C.red,borderRadius:11,padding:"11px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer"}}>
-          Remove {initial.name} from flock
-        </button>}
+      {/* WELFARE */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Welfare Profile</div>
+        <WCard style={{marginBottom:0}}>
+          {WELFARE_CONDITIONS.map((w,i)=>{
+            const val=form.welfare?.[w.id]||0;
+            const bgs=[C.greenLight,C.amberLight,C.redLight];
+            const cols=[C.green,C.amber,C.red];
+            return <div key={w.id} style={{marginBottom:i<WELFARE_CONDITIONS.length-1?16:0,paddingBottom:i<WELFARE_CONDITIONS.length-1?16:0,borderBottom:i<WELFARE_CONDITIONS.length-1?`1px solid ${C.borderLight}`:"none"}}>
+              <div style={{fontFamily:FS.sans,fontSize:13,fontWeight:500,color:C.text,marginBottom:8}}>{w.icon} {w.label}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {w.opts.map((opt,idx)=><button key={opt} onClick={()=>setForm(f=>({...f,welfare:{...(f.welfare||{}),[w.id]:idx}}))} style={{background:val===idx?bgs[idx]:C.bgMuted,color:val===idx?cols[idx]:C.textMid,border:`1.5px solid ${val===idx?cols[idx]+"55":C.border}`,borderRadius:8,padding:"8px 11px",fontFamily:FS.sans,fontSize:12,cursor:"pointer",fontWeight:val===idx?600:400}}>
+                  {idx===0?"✅ ":idx===1?"⚠️ ":"🚨 "}{opt}
+                </button>)}
+              </div>
+            </div>;
+          })}
+        </WCard>
+      </div>
+
+      {/* NOTES — uncontrolled */}
+      <div style={{marginBottom:20}}>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:8}}>Notes</div>
+        <textarea
+          defaultValue={initial?.notes||""}
+          onChange={e=>notesRef.current=e.target.value}
+          placeholder="e.g. rehomed March 2025, nervous around handling…"
+          style={{...iS,minHeight:90,resize:"vertical",lineHeight:1.6}}
+        />
+      </div>
+
+      <div style={{display:"flex",gap:9}}>
+        <button onClick={save} style={{flex:1,background:C.green,color:"#fff",border:"none",borderRadius:11,padding:"14px 0",fontFamily:FS.sans,fontSize:15,cursor:"pointer",fontWeight:500}}>{initial?"Save Changes":"Add to Flock ✓"}</button>
+        <button onClick={onCancel} style={{background:C.bgMuted,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",fontFamily:FS.sans,fontSize:15,cursor:"pointer"}}>Cancel</button>
+      </div>
+      {initial&&<>
+        {onMemorial&&<button onClick={()=>setShowMem(true)} style={{width:"100%",marginTop:10,background:"#F5F0FB",color:"#7A5E9A",border:"1px solid #C4A8D844",borderRadius:11,padding:"12px 0",fontFamily:FS.sans,fontSize:13,cursor:"pointer"}}>🕊️ {initial.name} has passed away…</button>}
+        {onDelete&&<button onClick={onDelete} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.red}44`,color:C.red,borderRadius:11,padding:"12px 0",fontFamily:FS.sans,fontSize:13,cursor:"pointer"}}>Remove {initial.name} from flock</button>}
       </>}
     </div>
   );
 }
 
-// ─── APP HEADER ───────────────────────────────────────────────────────────────
-function AppHeader({hens,flockTasks}){
-  const done=Object.values(flockTasks).filter(Boolean).length;
-  const eggsToday=hens.reduce((a,h)=>a+(h.eggsToday||0),0);
-  const eggsWeek=EGG_COUNTS.reduce((a,b)=>a+b,0);
-  return <div style={{background:C.headerBg,padding:"22px 20px 18px"}}>
-    <div style={{display:"flex",alignItems:"center",gap:13,marginBottom:16}}>
-      <div style={{width:46,height:46,borderRadius:14,background:"rgba(255,255,255,0.11)",display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(255,255,255,0.14)"}}><FeatherIcon size={26} color="#B89A6A"/></div>
+// ── HEADER ────────────────────────────────────────────────────────────────────
+function Header({hens,tasks}){
+  const done=Object.values(tasks).filter(Boolean).length;
+  const eggs=hens.reduce((a,h)=>a+(h.eggsToday||0),0);
+  return <div style={{background:C.headerBg,padding:"20px 20px 16px",flexShrink:0}}>
+    <div style={{display:"flex",alignItems:"center",gap:13,marginBottom:14}}>
+      <div style={{width:46,height:46,borderRadius:14,background:"rgba(255,255,255,0.11)",display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(255,255,255,0.14)"}}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#B89A6A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg>
+      </div>
       <div>
-        <div style={{fontFamily:GS.fontSerif,fontSize:26,fontWeight:600,color:"#F5F0E8",letterSpacing:"0.01em",lineHeight:1}}>Flock & Feather</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:10,color:"rgba(255,255,255,0.45)",letterSpacing:"0.2em",textTransform:"uppercase",marginTop:3}}>Hen Welfare Tracker</div>
+        <div style={{fontFamily:FS.serif,fontSize:26,fontWeight:600,color:"#F5F0E8",lineHeight:1}}>Flock & Feather</div>
+        <div style={{fontFamily:FS.sans,fontSize:10,color:"rgba(255,255,255,0.45)",letterSpacing:"0.2em",textTransform:"uppercase",marginTop:3}}>Hen Welfare Tracker</div>
       </div>
     </div>
     <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-      {[`${hens.length} hens`,`${eggsToday} today`,`${eggsWeek} this week`,`${done}/${CARE_TASKS.length} tasks`].map(l=><div key={l} style={{border:"1px solid rgba(255,255,255,0.2)",borderRadius:20,padding:"5px 12px",fontFamily:GS.fontSans,fontSize:12,color:"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.07)"}}>{l}</div>)}
+      {[`${hens.length} hens`,`${eggs} today`,`${EGG_WEEK.reduce((a,b)=>a+b,0)} this week`,`${done}/${CARE_TASKS.length} tasks`].map(l=>
+        <div key={l} style={{border:"1px solid rgba(255,255,255,0.2)",borderRadius:20,padding:"5px 12px",fontFamily:FS.sans,fontSize:12,color:"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.07)"}}>{l}</div>
+      )}
     </div>
   </div>;
 }
 
-// ─── TAB 1: CARE ─────────────────────────────────────────────────────────────
-function CareTab({hens,flockTasks,setFlockTasks}){
-  const done=Object.values(flockTasks).filter(Boolean).length;
+// ── CARE TAB ──────────────────────────────────────────────────────────────────
+function CareTab({hens,tasks,setTasks}){
+  const done=Object.values(tasks).filter(Boolean).length;
   const pct=Math.round((done/CARE_TASKS.length)*100);
-  const allAlerts=hens.flatMap(h=>h.alerts.map(a=>({hen:h,alert:a})));
-  const allMeds=hens.flatMap(h=>h.meds.map(m=>({hen:h,med:m})));
-  const eggsToday=hens.reduce((a,h)=>a+(h.eggsToday||0),0);
+  const eggs=hens.reduce((a,h)=>a+(h.eggsToday||0),0);
+  const alerts=hens.flatMap(h=>(h.alerts||[]).map(a=>({hen:h,alert:a})));
+  const meds=hens.flatMap(h=>(h.meds||[]).map(m=>({hen:h,med:m})));
   return <div>
-    <div style={{background:C.green,borderRadius:18,padding:"18px 20px",marginBottom:18,position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",right:-12,bottom:-12,opacity:0.06,fontSize:90}}>🌿</div>
-      <div style={{fontFamily:GS.fontSans,fontSize:11,color:"rgba(255,255,255,0.55)",letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:3}}>{TODAY_LONG}</div>
-      <div style={{fontFamily:GS.fontSerif,fontSize:20,fontWeight:600,color:"#F5F0E8",marginBottom:14}}>Good morning, {CURRENT_USER.name}</div>
+    <GCard>
+      <div style={{fontFamily:FS.sans,fontSize:11,color:"rgba(255,255,255,0.55)",letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:3}}>{TODAY}</div>
+      <div style={{fontFamily:FS.serif,fontSize:20,fontWeight:600,color:"#F5F0E8",marginBottom:14}}>Good morning, Sarah</div>
       <div style={{background:"rgba(255,255,255,0.15)",borderRadius:10,height:6,marginBottom:7}}><div style={{background:pct===100?"#7FBF7F":C.gold,borderRadius:10,height:6,width:`${pct}%`,transition:"width 0.4s"}}/></div>
-      <div style={{fontFamily:GS.fontSans,fontSize:12,color:"rgba(255,255,255,0.7)"}}>{done} of {CARE_TASKS.length} tasks complete{pct===100?" 🎉":""}</div>
-    </div>
-
-    <WhiteCard style={{marginBottom:16}}>
-      <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text,marginBottom:12}}>Who's helping today</div>
+      <div style={{fontFamily:FS.sans,fontSize:12,color:"rgba(255,255,255,0.7)"}}>{done} of {CARE_TASKS.length} tasks complete{pct===100?" 🎉":""}</div>
+    </GCard>
+    <WCard>
+      <div style={{fontFamily:FS.serif,fontSize:17,fontWeight:600,color:C.text,marginBottom:12}}>Who's helping today</div>
       <div style={{display:"flex",gap:14}}>
-        {FLOCK_MEMBERS.map(m=><div key={m.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-          <div style={{position:"relative"}}><UserAvatar initials={m.avatar} size={44} bg={m.color+"18"} color={m.color}/><div style={{position:"absolute",bottom:1,right:1,width:11,height:11,borderRadius:"50%",background:m.online?"#5FA85F":C.border,border:"2px solid #fff"}}/></div>
-          <div style={{fontFamily:GS.fontSans,fontSize:11.5,color:m.online?C.text:C.textMuted,fontWeight:m.online?500:400,textAlign:"center"}}>{m.name}</div>
-          <div style={{fontFamily:GS.fontSans,fontSize:10,color:m.online?"#5FA85F":C.textMuted}}>{m.online?"Online":"Offline"}</div>
+        {MEMBERS.map(m=><div key={m.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+          <div style={{position:"relative"}}>
+            <UAvatar ini={m.av} size={44} bg={m.color+"18"} col={m.color}/>
+            <div style={{position:"absolute",bottom:1,right:1,width:11,height:11,borderRadius:"50%",background:m.online?"#5FA85F":C.border,border:"2px solid #fff"}}/>
+          </div>
+          <div style={{fontFamily:FS.sans,fontSize:11,color:m.online?C.text:C.textMuted,fontWeight:m.online?500:400}}>{m.name}</div>
+          <div style={{fontFamily:FS.sans,fontSize:10,color:m.online?"#5FA85F":C.textMuted}}>{m.online?"Online":"Offline"}</div>
         </div>)}
       </div>
-    </WhiteCard>
-
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
-      <GreenCard style={{padding:"16px 18px"}}>
-        <div style={{fontFamily:GS.fontSans,fontSize:11,color:"rgba(255,255,255,0.5)",letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:4}}>Eggs today</div>
-        <div style={{fontFamily:GS.fontSerif,fontSize:38,fontWeight:600,color:"#fff",lineHeight:1}}>{eggsToday}</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:5}}>of {hens.filter(h=>h.inLay).length} laying hens</div>
-      </GreenCard>
-      <WhiteCard style={{padding:"16px 18px"}}>
-        <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:4}}>This week</div>
-        <div style={{fontFamily:GS.fontSerif,fontSize:38,fontWeight:600,color:C.text,lineHeight:1}}>{EGG_COUNTS.reduce((a,b)=>a+b,0)}</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,marginTop:5}}>eggs collected</div>
-      </WhiteCard>
+    </WCard>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+      <GCard style={{padding:"16px 18px",marginBottom:0}}>
+        <div style={{fontFamily:FS.sans,fontSize:10,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:4}}>Eggs today</div>
+        <div style={{fontFamily:FS.serif,fontSize:38,fontWeight:600,color:"#fff",lineHeight:1}}>{eggs}</div>
+      </GCard>
+      <WCard style={{padding:"16px 18px",marginBottom:0}}>
+        <div style={{fontFamily:FS.sans,fontSize:10,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:4}}>This week</div>
+        <div style={{fontFamily:FS.serif,fontSize:38,fontWeight:600,color:C.text,lineHeight:1}}>{EGG_WEEK.reduce((a,b)=>a+b,0)}</div>
+      </WCard>
     </div>
-
-    {allAlerts.length>0&&<div style={{background:C.amberLight,border:`1px solid ${C.goldBorder}`,borderRadius:14,padding:"14px 16px",marginBottom:14}}>
-      <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.amber,marginBottom:10}}>⚠️ Welfare Alerts</div>
-      {allAlerts.map((a,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:i<allAlerts.length-1?9:0,paddingBottom:i<allAlerts.length-1?9:0,borderBottom:i<allAlerts.length-1?`1px solid ${C.goldBorder}44`:"none"}}>
-        <HenAvatar hen={a.hen} size={26}/><div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMid,lineHeight:1.5}}><strong style={{color:C.text}}>{a.hen.name}:</strong> {a.alert}</div>
-      </div>)}
+    {alerts.length>0&&<div style={{background:C.amberLight,border:`1px solid ${C.goldBorder}`,borderRadius:14,padding:"14px 16px",marginBottom:14}}>
+      <div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.amber,marginBottom:10}}>⚠️ Welfare Alerts</div>
+      {alerts.map((a,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:i<alerts.length-1?8:0}}><HenAv hen={a.hen} size={26}/><div style={{fontFamily:FS.sans,fontSize:12.5,color:C.textMid}}><strong style={{color:C.text}}>{a.hen.name}:</strong> {a.alert}</div></div>)}
     </div>}
-
-    {allMeds.length>0&&<div style={{background:C.blueLight,border:`1px solid ${C.blue}33`,borderRadius:14,padding:"14px 16px",marginBottom:14}}>
-      <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.blue,marginBottom:10}}>💊 Medications Active</div>
-      {allMeds.map((m,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:i<allMeds.length-1?7:0}}>
-        <HenAvatar hen={m.hen} size={24}/><span style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.text}}><strong>{m.hen.name}:</strong> {m.med}</span>
-      </div>)}
+    {meds.length>0&&<div style={{background:C.blueLight,border:`1px solid ${C.blue}33`,borderRadius:14,padding:"14px 16px",marginBottom:14}}>
+      <div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.blue,marginBottom:10}}>💊 Medications Active</div>
+      {meds.map((m,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:i<meds.length-1?7:0}}><HenAv hen={m.hen} size={24}/><span style={{fontFamily:FS.sans,fontSize:12.5,color:C.text}}><strong>{m.hen.name}:</strong> {m.med}</span></div>)}
     </div>}
-
-    <SeasonTip/>
-    <SectionTitle title="Daily Checklist" sub={`${done}/${CARE_TASKS.length} complete`}/>
-    <WhiteCard style={{marginBottom:8}}>
-      {CARE_TASKS.map(t=><CheckItem key={t.id} task={t} checked={!!flockTasks[t.id]} onChange={()=>setFlockTasks(p=>({...p,[t.id]:!p[t.id]}))}/>)}
+    <div style={{background:C.goldLight,border:`1px solid ${C.goldBorder}`,borderRadius:14,padding:"13px 16px",marginBottom:14,display:"flex",gap:12}}>
+      <span style={{fontSize:22}}>☀️</span>
+      <div><div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.green,marginBottom:3}}>Summer Care</div><div style={{fontFamily:FS.sans,fontSize:12.5,color:C.textMid,lineHeight:1.65}}>Red mite populations spike in warm weather. Check perches every 3–4 days.</div></div>
+    </div>
+    <SecTitle title="Daily Checklist" sub={`${done}/${CARE_TASKS.length} complete`}/>
+    <WCard>
+      {CARE_TASKS.map(t=><ChkItem key={t.id} task={t} checked={!!tasks[t.id]} onChange={()=>setTasks(p=>({...p,[t.id]:!p[t.id]}))}/>)}
       <div style={{paddingTop:4}}/>
-    </WhiteCard>
+    </WCard>
   </div>;
 }
 
-// ─── TAB 2: FLOCK ────────────────────────────────────────────────────────────
-function FlockTab({hens,setHens,memorialHens,setMemorialHens,setActiveHen}){
+// ── FLOCK TAB ─────────────────────────────────────────────────────────────────
+function FlockTab({hens,setHens,memHens,setMemHens,setActiveHen}){
   const [mode,setMode]=useState("list");
-  const [editingHen,setEditingHen]=useState(null);
-
-  const addHen=form=>{setHens(p=>[...p,{...form,id:Date.now(),meds:[],alerts:[],eggsToday:0}]);setMode("list");};
-  const saveHen=form=>{setHens(p=>p.map(h=>h.id===editingHen.id?{...h,...form}:h));setMode("list");setEditingHen(null);};
-  const deleteHen=()=>{setHens(p=>p.filter(h=>h.id!==editingHen.id));setMode("list");setEditingHen(null);};
-  const memorialHen=form=>{
-    setMemorialHens(p=>[...p,{...form,id:form.id||editingHen.id,archivedAt:new Date().toLocaleDateString("en-GB")}]);
-    setHens(p=>p.filter(h=>h.id!==editingHen.id));
-    setMode("list");setEditingHen(null);
-  };
-
-  if(mode==="add") return <HenForm onSave={addHen} onCancel={()=>setMode("list")}/>;
-  if(mode==="edit") return <HenForm initial={editingHen} onSave={saveHen} onCancel={()=>setMode("list")} onDelete={deleteHen} onMemorial={memorialHen}/>;
-
+  const [editing,setEditing]=useState(null);
+  const add=f=>{setHens(p=>[...p,{...f,id:Date.now(),alerts:[],eggsToday:0}]);setMode("list");};
+  const save=f=>{setHens(p=>p.map(h=>h.id===editing.id?{...h,...f}:h));setMode("list");setEditing(null);};
+  const del=()=>{setHens(p=>p.filter(h=>h.id!==editing.id));setMode("list");setEditing(null);};
+  const mem=f=>{setMemHens(p=>[...p,{...f,id:editing.id,archivedAt:new Date().toLocaleDateString("en-GB")}]);setHens(p=>p.filter(h=>h.id!==editing.id));setMode("list");setEditing(null);};
+  if(mode==="add") return <HenForm onSave={add} onCancel={()=>setMode("list")}/>;
+  if(mode==="edit") return <HenForm initial={editing} onSave={save} onCancel={()=>setMode("list")} onDelete={del} onMemorial={mem}/>;
   return <div>
-    <SectionTitle title="My Flock" sub={hens.length>0?`${hens.length} hen${hens.length!==1?"s":""} · ${hens.filter(h=>h.inLay).length} in lay today`:"Add your first hen to get started"} action="Add Hen" onAction={()=>setMode("add")}/>
-
+    <SecTitle title="My Flock" sub={hens.length>0?`${hens.length} hen${hens.length!==1?"s":""} · ${hens.filter(h=>h.inLay).length} in lay`:"Add your first hen"} action="Add Hen" onAction={()=>setMode("add")}/>
     {hens.length===0&&<div style={{textAlign:"center",padding:"48px 24px",background:C.bgMuted,borderRadius:18,border:`1px dashed ${C.border}`,marginBottom:16}}>
       <div style={{fontSize:52,marginBottom:14}}>🐣</div>
-      <div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:C.textMid,marginBottom:8}}>No hens yet</div>
-      <div style={{fontFamily:GS.fontSans,fontSize:13.5,color:C.textMuted,lineHeight:1.65,maxWidth:240,margin:"0 auto 20px"}}>Tap "Add Hen" to build your flock and start tracking their welfare.</div>
-      <button onClick={()=>setMode("add")} style={{background:C.green,color:"#fff",border:"none",borderRadius:22,padding:"11px 24px",fontFamily:GS.fontSans,fontSize:13.5,cursor:"pointer",fontWeight:500}}>+ Add your first hen</button>
+      <div style={{fontFamily:FS.serif,fontSize:22,fontWeight:600,color:C.textMid,marginBottom:8}}>No hens yet</div>
+      <div style={{fontFamily:FS.sans,fontSize:13,color:C.textMuted,lineHeight:1.65,maxWidth:240,margin:"0 auto 20px"}}>Tap "Add Hen" to build your flock.</div>
+      <button onClick={()=>setMode("add")} style={{background:C.green,color:"#fff",border:"none",borderRadius:22,padding:"12px 24px",fontFamily:FS.sans,fontSize:14,cursor:"pointer",fontWeight:500}}>+ Add your first hen</button>
     </div>}
-
     {hens.length>0&&<>
-      <WhiteCard style={{marginBottom:18}}>
-        <div style={{fontFamily:GS.fontSerif,fontSize:16,fontWeight:600,color:C.text,marginBottom:14}}>Today's Laying</div>
-        {hens.map((h,i)=><div key={h.id} style={{display:"flex",alignItems:"center",gap:12,paddingBottom:i<hens.length-1?11:0,marginBottom:i<hens.length-1?11:0,borderBottom:i<hens.length-1?`1px solid ${C.borderLight}`:"none"}}>
-          <HenAvatar hen={h} size={34}/>
-          <div style={{flex:1}}><div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,fontWeight:500}}>{h.name}</div><div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted}}>{h.breed||"Breed not set"}</div></div>
-          {h.inLay?<span style={{fontFamily:GS.fontSans,fontSize:13,color:C.green,fontWeight:500}}>🥚 {h.eggsToday||0}</span>:<StatusPill label="Not in lay" type="muted"/>}
-        </div>)}
-      </WhiteCard>
-
-      <WhiteCard style={{marginBottom:18}}>
-        <div style={{fontFamily:GS.fontSerif,fontSize:16,fontWeight:600,color:C.text,marginBottom:14}}>7-Day Egg Trend</div>
+      <WCard>
+        <div style={{fontFamily:FS.serif,fontSize:16,fontWeight:600,color:C.text,marginBottom:14}}>7-Day Egg Trend</div>
         <div style={{display:"flex",gap:5,alignItems:"flex-end",height:56}}>
-          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day,i)=><div key={day} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-            <div style={{width:"100%",background:EGG_COUNTS[i]>0?C.green:C.borderLight,borderRadius:5,height:`${Math.max(EGG_COUNTS[i]*15,4)}px`}}/>
-            <div style={{fontFamily:GS.fontSans,fontSize:10,color:C.textMuted}}>{day.slice(0,1)}</div>
-            <div style={{fontFamily:GS.fontSans,fontSize:11.5,color:C.green,fontWeight:600}}>{EGG_COUNTS[i]}</div>
+          {["M","T","W","T","F","S","S"].map((d,i)=><div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+            <div style={{width:"100%",background:EGG_WEEK[i]>0?C.green:C.borderLight,borderRadius:4,height:`${Math.max(EGG_WEEK[i]*14,4)}px`}}/>
+            <div style={{fontFamily:FS.sans,fontSize:10,color:C.textMuted}}>{d}</div>
+            <div style={{fontFamily:FS.sans,fontSize:11,color:C.green,fontWeight:600}}>{EGG_WEEK[i]}</div>
           </div>)}
         </div>
-      </WhiteCard>
-
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Hen Profiles</div>
-      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:8}}>
-        {hens.map(h=><div key={h.id} style={{background:C.bgCard,border:`1px solid ${C.borderLight}`,borderRadius:16,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.04)",display:"flex"}}>
-          <div onClick={()=>setActiveHen(h)} style={{flex:1,padding:"14px 16px",display:"flex",alignItems:"center",gap:13,cursor:"pointer"}}>
-            <HenAvatar hen={h} size={52}/>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text}}>{h.name}</div>
-              <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginTop:1}}>{h.breed||"Breed not set"}{h.age?` · ${h.age}`:""}</div>
-              {h.inLay&&<div style={{fontFamily:GS.fontSans,fontSize:12,color:C.green,marginTop:3}}>🥚 {h.eggsToday||0} egg{(h.eggsToday||0)!==1?"s":""} today</div>}
-              <div style={{display:"flex",gap:5,marginTop:6,flexWrap:"wrap"}}>
-                {h.alerts?.length>0&&<StatusPill label={`⚠️ ${h.alerts.length} alert${h.alerts.length>1?"s":""}`} type="warn"/>}
-                {h.meds?.length>0&&<StatusPill label="💊 On meds" type="blue"/>}
-                {!h.alerts?.length&&!h.meds?.length&&<StatusPill label="All clear" type="ok"/>}
-              </div>
+      </WCard>
+      <div style={{fontFamily:FS.serif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Hen Profiles</div>
+      {hens.map(h=><div key={h.id} style={{background:C.bgCard,border:`1px solid ${C.borderLight}`,borderRadius:16,overflow:"hidden",marginBottom:10,display:"flex",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+        <div onClick={()=>setActiveHen(h)} style={{flex:1,padding:"14px 16px",display:"flex",alignItems:"center",gap:13,cursor:"pointer"}}>
+          <HenAv hen={h} size={52}/>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:FS.serif,fontSize:18,fontWeight:600,color:C.text}}>{h.name}</div>
+            <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted,marginTop:1}}>{h.breed||"Breed not set"}{h.age?` · ${h.age}`:""}</div>
+            {h.inLay&&<div style={{fontFamily:FS.sans,fontSize:12,color:C.green,marginTop:3}}>🥚 {h.eggsToday||0} today</div>}
+            <div style={{display:"flex",gap:5,marginTop:6,flexWrap:"wrap"}}>
+              {(h.alerts||[]).length>0&&<Pill label={`⚠️ ${h.alerts.length} alert${h.alerts.length>1?"s":""}`} type="warn"/>}
+              {(h.meds||[]).length>0&&<Pill label="💊 On meds" type="blue"/>}
+              {!(h.alerts||[]).length&&!(h.meds||[]).length&&<Pill label="All clear" type="ok"/>}
             </div>
           </div>
-          <button onClick={()=>{setEditingHen(h);setMode("edit");}} style={{background:C.bgMuted,border:"none",borderLeft:`1px solid ${C.borderLight}`,padding:"0 16px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5L13.5 4.5L5.5 12.5H3.5V10.5L11.5 2.5Z" stroke={C.textMuted} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
-        </div>)}
-      </div>
+        </div>
+        <button onClick={()=>{setEditing(h);setMode("edit");}} style={{background:C.bgMuted,border:"none",borderLeft:`1px solid ${C.borderLight}`,padding:"0 16px",cursor:"pointer",display:"flex",alignItems:"center"}}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5L13.5 4.5L5.5 12.5H3.5V10.5L11.5 2.5Z" stroke={C.textMuted} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+      </div>)}
     </>}
-
-    {/* Memorial section */}
-    {memorialHens.length>0&&<>
-      <div style={{display:"flex",alignItems:"center",gap:10,margin:"28px 0 14px"}}>
+    {memHens.length>0&&<>
+      <div style={{display:"flex",alignItems:"center",gap:10,margin:"24px 0 14px"}}>
         <div style={{flex:1,height:1,background:C.borderLight}}/>
-        <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",whiteSpace:"nowrap"}}>🕊️ In Memory</div>
+        <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",whiteSpace:"nowrap"}}>🕊️ In Memory</div>
         <div style={{flex:1,height:1,background:C.borderLight}}/>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:8}}>
-        {memorialHens.map(h=><div key={h.id} style={{background:"#FAF7FC",border:"1px solid #E0D4EE",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:13}}>
-          <div style={{position:"relative"}}>
-            <HenAvatar hen={{...h,color:h.color+"88"}} size={48}/>
-            <div style={{position:"absolute",inset:0,borderRadius:48/3,background:"rgba(255,255,255,0.4)"}}/>
-          </div>
-          <div style={{flex:1}}>
-            <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.textMid}}>{h.name}</div>
-            <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginTop:1}}>{h.breed||"Beloved hen"}</div>
-            {h.passedDate&&<div style={{fontFamily:GS.fontSans,fontSize:12,color:"#9A8A9A",marginTop:3}}>🕊️ {h.passedDate}</div>}
-            {h.memorialNote&&<div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginTop:5,lineHeight:1.55,fontStyle:"italic"}}>"{h.memorialNote}"</div>}
-          </div>
-        </div>)}
-      </div>
+      {memHens.map(h=><div key={h.id} style={{background:"#FAF7FC",border:"1px solid #E0D4EE",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:13,marginBottom:10}}>
+        <div style={{opacity:0.7}}><HenAv hen={h} size={48}/></div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:FS.serif,fontSize:17,fontWeight:600,color:C.textMid}}>{h.name}</div>
+          <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted}}>{h.breed||"Beloved hen"}</div>
+          {h.passedDate&&<div style={{fontFamily:FS.sans,fontSize:12,color:"#9A8A9A",marginTop:3}}>🕊️ {h.passedDate}</div>}
+          {h.memorialNote&&<div style={{fontFamily:FS.sans,fontSize:12,color:C.textMid,marginTop:5,lineHeight:1.55,fontStyle:"italic"}}>"{h.memorialNote}"</div>}
+        </div>
+      </div>)}
     </>}
   </div>;
 }
 
-// ─── HEN PROFILE ─────────────────────────────────────────────────────────────
-function WelfarePanel({hen}){
-  const welfare = hen.welfare || {};
-  const optColors = [C.greenLight, C.amberLight, C.redLight];
-  const optText   = [C.green,      C.amber,      C.red];
-  const concerns  = WELFARE_CONDITIONS.filter(c => (welfare[c.id]||0) > 0);
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {concerns.length === 0 && (
-        <div style={{background:C.greenLight,border:`1px solid ${C.green}33`,borderRadius:14,padding:"16px 18px",textAlign:"center"}}>
-          <div style={{fontSize:28,marginBottom:6}}>✅</div>
-          <div style={{fontFamily:GS.fontSerif,fontSize:16,fontWeight:600,color:C.green}}>No active welfare concerns</div>
-          <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginTop:4}}>All conditions set to normal. Edit her profile to update.</div>
-        </div>
-      )}
-      {concerns.length > 0 && (
-        <div style={{background:C.amberLight,border:`1px solid ${C.goldBorder}`,borderRadius:14,padding:"14px 16px"}}>
-          <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.amber,marginBottom:10}}>⚠️ Active Welfare Notes</div>
-          {concerns.map((c,i)=>{
-            const level = welfare[c.id]||0;
-            return <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:i<concerns.length-1?9:0,marginBottom:i<concerns.length-1?9:0,borderBottom:i<concerns.length-1?`1px solid ${C.goldBorder}44`:"none"}}>
-              <span style={{fontSize:18,flexShrink:0}}>{c.icon}</span>
-              <div style={{flex:1}}>
-                <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,fontWeight:500}}>{c.label}</div>
-                <div style={{fontFamily:GS.fontSans,fontSize:12,color:optText[level]}}>{level===1?"⚠️ ":"🚨 "}{c.options[level]}</div>
-              </div>
-            </div>;
-          })}
-        </div>
-      )}
-
-      <WhiteCard>
-        <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text,marginBottom:14}}>Full Welfare Profile</div>
-        {WELFARE_CONDITIONS.map((cond,i)=>{
-          const val = welfare[cond.id]||0;
-          return (
-            <div key={cond.id} style={{paddingBottom:i<WELFARE_CONDITIONS.length-1?12:0,marginBottom:i<WELFARE_CONDITIONS.length-1?12:0,borderBottom:i<WELFARE_CONDITIONS.length-1?`1px solid ${C.borderLight}`:"none"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                <span style={{fontSize:16}}>{cond.icon}</span>
-                <span style={{fontFamily:GS.fontSans,fontSize:13,fontWeight:500,color:C.text}}>{cond.label}</span>
-              </div>
-              <div style={{display:"inline-block",background:optColors[val],border:`1px solid ${optText[val]}44`,borderRadius:8,padding:"4px 10px",fontFamily:GS.fontSans,fontSize:12,color:optText[val],fontWeight:500}}>
-                {val===0?"✅ ":val===1?"⚠️ ":"🚨 "}{cond.options[val]}
-              </div>
-            </div>
-          );
-        })}
-        <div style={{marginTop:14,fontFamily:GS.fontSans,fontSize:12,color:C.textMuted}}>
-          Edit her profile (pencil icon on Flock tab) to update these conditions.
-        </div>
-      </WhiteCard>
-
-      {/* Meds on welfare view */}
-      {hen.meds?.length > 0 && (
-        <WhiteCard>
-          <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text,marginBottom:12}}>💊 Current Medications</div>
-          {hen.meds.map((med,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:i<hen.meds.length-1?10:0,marginBottom:i<hen.meds.length-1?10:0,borderBottom:i<hen.meds.length-1?`1px solid ${C.borderLight}`:"none"}}>
-              <span style={{fontSize:18}}>💊</span>
-              <span style={{fontFamily:GS.fontSans,fontSize:13,color:C.text}}>{med}</span>
-            </div>
-          ))}
-        </WhiteCard>
-      )}
-
-      {hen.notes && (
-        <WhiteCard>
-          <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text,marginBottom:8}}>📝 Notes</div>
-          <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,lineHeight:1.7}}>{hen.notes}</div>
-        </WhiteCard>
-      )}
-    </div>
-  );
-}
-
+// ── HEN PROFILE ───────────────────────────────────────────────────────────────
 function HenProfile({hen,onBack}){
   const [tab,setTab]=useState("welfare");
+
+  function WelfarePanel(){
+    const w=hen.welfare||{};
+    const concerns=WELFARE_CONDITIONS.filter(c=>(w[c.id]||0)>0);
+    const bgs=[C.greenLight,C.amberLight,C.redLight];
+    const cols=[C.green,C.amber,C.red];
+    return <div>
+      {concerns.length===0&&<div style={{background:C.greenLight,border:`1px solid ${C.green}33`,borderRadius:14,padding:"20px",textAlign:"center",marginBottom:14}}>
+        <div style={{fontSize:28,marginBottom:6}}>✅</div>
+        <div style={{fontFamily:FS.serif,fontSize:16,fontWeight:600,color:C.green}}>No active welfare concerns</div>
+      </div>}
+      {concerns.length>0&&<div style={{background:C.amberLight,border:`1px solid ${C.goldBorder}`,borderRadius:14,padding:"14px 16px",marginBottom:14}}>
+        <div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.amber,marginBottom:10}}>⚠️ Active Welfare Notes</div>
+        {concerns.map((c,i)=><div key={c.id} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:i<concerns.length-1?9:0,marginBottom:i<concerns.length-1?9:0,borderBottom:i<concerns.length-1?`1px solid ${C.goldBorder}44`:"none"}}>
+          <span style={{fontSize:18}}>{c.icon}</span>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:FS.sans,fontSize:13,color:C.text,fontWeight:500}}>{c.label}</div>
+            <div style={{fontFamily:FS.sans,fontSize:12,color:cols[w[c.id]||0]}}>{w[c.id]===1?"⚠️ ":"🚨 "}{c.opts[w[c.id]||0]}</div>
+          </div>
+        </div>)}
+      </div>}
+      <WCard>
+        <div style={{fontFamily:FS.serif,fontSize:17,fontWeight:600,color:C.text,marginBottom:14}}>Full Welfare Profile</div>
+        {WELFARE_CONDITIONS.map((cond,i)=>{
+          const val=w[cond.id]||0;
+          return <div key={cond.id} style={{paddingBottom:i<WELFARE_CONDITIONS.length-1?12:0,marginBottom:i<WELFARE_CONDITIONS.length-1?12:0,borderBottom:i<WELFARE_CONDITIONS.length-1?`1px solid ${C.borderLight}`:"none",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18,flexShrink:0}}>{cond.icon}</span>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:FS.sans,fontSize:13,fontWeight:500,color:C.text}}>{cond.label}</div>
+              <div style={{display:"inline-block",background:bgs[val],border:`1px solid ${cols[val]}44`,borderRadius:8,padding:"3px 9px",fontFamily:FS.sans,fontSize:11.5,color:cols[val],fontWeight:500,marginTop:3}}>
+                {val===0?"✅ ":val===1?"⚠️ ":"🚨 "}{cond.opts[val]}
+              </div>
+            </div>
+          </div>;
+        })}
+      </WCard>
+      {(hen.meds||[]).length>0&&<WCard>
+        <div style={{fontFamily:FS.serif,fontSize:17,fontWeight:600,color:C.text,marginBottom:12}}>💊 Current Medications</div>
+        {hen.meds.map((m,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,paddingBottom:i<hen.meds.length-1?10:0,marginBottom:i<hen.meds.length-1?10:0,borderBottom:i<hen.meds.length-1?`1px solid ${C.borderLight}`:"none"}}>
+          <span style={{fontSize:18}}>💊</span><span style={{fontFamily:FS.sans,fontSize:13,color:C.text}}>{m}</span>
+        </div>)}
+      </WCard>}
+    </div>;
+  }
+
+  function HealthPanel(){
+    const [markers,setMarkers]=useState({});
+    const [inLay,setInLay]=useState(null);
+    const [loading,setLoading]=useState(false);
+    const [summary,setSummary]=useState("");
+    const [notes,setNotes]=useState([]);
+    const [saved,setSaved]=useState(false);
+    const textRef=useRef("");
+    const iS={width:"100%",padding:"14px",borderRadius:10,border:`1px solid ${C.border}`,fontFamily:FS.sans,fontSize:"16px",color:C.text,background:C.bgMuted,outline:"none",boxSizing:"border-box"};
+    const summarise=async()=>{
+      const txt=textRef.current;
+      if(!txt.trim())return;setLoading(true);
+      try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:`You are a pet hen welfare assistant. Summarise this observation into 3–5 bullet points. Flag concerns with ⚠️. Do not diagnose.\n\nHen: ${hen.name} (${hen.breed||"unknown"})\nNote: "${txt}"`}]})});const d=await res.json();setSummary(d.content?.map(b=>b.text||"").join("")||"Could not summarise.");}
+      catch{setSummary("Error — please try again.");}setLoading(false);
+    };
+    const save=()=>{setNotes(n=>[{text:summary||textRef.current,date:new Date().toLocaleDateString("en-GB")},...n]);setSaved(true);setSummary("");textRef.current="";const el=document.getElementById("obs-textarea");if(el)el.value="";setTimeout(()=>setSaved(false),2500);};
+    return <div>
+      <WCard>
+        <div style={{fontFamily:FS.serif,fontSize:18,fontWeight:600,color:C.text,marginBottom:14}}>Daily Health Check</div>
+        {HEALTH_MARKERS.map((m,i)=><div key={m.id} style={{marginBottom:14,paddingBottom:14,borderBottom:i<HEALTH_MARKERS.length-1?`1px solid ${C.borderLight}`:"none"}}>
+          <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMid,marginBottom:7,fontWeight:500}}>{m.icon} {m.label}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {m.opts.map(opt=>{const sel=markers[m.id]===opt;const bg=sel?(opt.includes("✅")?C.green:opt.includes("⚠️")?C.amber:C.red):C.bgMuted;return <button key={opt} onClick={()=>setMarkers(p=>({...p,[m.id]:opt}))} style={{background:bg,color:sel?"#fff":C.text,border:`1px solid ${sel?bg:C.border}`,borderRadius:8,padding:"8px 11px",fontSize:13,cursor:"pointer",fontFamily:FS.sans,fontWeight:sel?500:400}}>{opt}</button>;})}
+          </div>
+        </div>)}
+      </WCard>
+      <WCard>
+        <div style={{fontFamily:FS.serif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Laying Status</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {["Laid today 🥚","Not in lay","Uncertain"].map(opt=><button key={opt} onClick={()=>setInLay(opt)} style={{background:inLay===opt?C.green:C.bgMuted,color:inLay===opt?"#fff":C.text,border:`1px solid ${inLay===opt?C.green:C.border}`,borderRadius:10,padding:"10px 14px",fontSize:13,cursor:"pointer",fontFamily:FS.sans,fontWeight:inLay===opt?500:400}}>{opt}</button>)}
+        </div>
+      </WCard>
+      <WCard>
+        <div style={{fontFamily:FS.serif,fontSize:18,fontWeight:600,color:C.text,marginBottom:10}}>Observation Note</div>
+        <textarea id="obs-textarea" defaultValue="" onChange={e=>textRef.current=e.target.value} placeholder={`Type your observation for ${hen.name}…`} style={{...iS,minHeight:90,resize:"vertical",lineHeight:1.6}}/>
+        <div style={{display:"flex",gap:9,marginTop:12}}>
+          <button onClick={summarise} disabled={loading} style={{background:loading?C.textMuted:C.green,color:"#fff",border:"none",borderRadius:10,padding:"11px 16px",fontFamily:FS.sans,fontSize:13,cursor:loading?"default":"pointer",fontWeight:500}}>{loading?"Summarising…":"✨ AI Summarise"}</button>
+          <button onClick={save} style={{background:C.greenLight,color:C.green,border:`1px solid ${C.green}44`,borderRadius:10,padding:"11px 16px",fontFamily:FS.sans,fontSize:13,cursor:"pointer",fontWeight:500}}>Save ✓</button>
+        </div>
+        {summary&&<AIBox label="✨ Summary" content={summary} color={C.green}/>}
+        {saved&&<div style={{marginTop:10,background:C.greenLight,borderRadius:10,padding:"10px 13px",color:C.green,fontSize:13,fontFamily:FS.sans,fontWeight:500}}>✓ Saved</div>}
+      </WCard>
+      {notes.length>0&&<WCard>
+        <div style={{fontFamily:FS.serif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Diary Entries</div>
+        {notes.map((n,i)=><div key={i} style={{background:C.bgMuted,borderRadius:10,padding:"11px 13px",marginBottom:8,border:`1px solid ${C.border}`}}>
+          <div style={{fontFamily:FS.sans,fontSize:10,color:C.textMuted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em"}}>{n.date}</div>
+          <div style={{fontFamily:FS.sans,fontSize:13,color:C.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{n.text}</div>
+        </div>)}
+      </WCard>}
+    </div>;
+  }
+
   return <div>
-    <button onClick={onBack} style={{background:"none",border:"none",color:C.textMid,fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",padding:"0 0 14px 0",display:"flex",alignItems:"center",gap:5}}>
+    <button onClick={onBack} style={{background:"none",border:"none",color:C.textMid,fontFamily:FS.sans,fontSize:13,cursor:"pointer",padding:"0 0 14px",display:"flex",alignItems:"center",gap:5}}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="10,3 5,8 10,13" stroke={C.textMid} strokeWidth="1.5" strokeLinecap="round"/></svg>Back to Flock
     </button>
     <div style={{background:`linear-gradient(135deg,${hen.color}18,${hen.color}05)`,border:`1.5px solid ${hen.color}33`,borderRadius:20,padding:"18px 20px",marginBottom:18,display:"flex",alignItems:"center",gap:16}}>
-      <HenAvatar hen={hen} size={56}/>
+      <HenAv hen={hen} size={56}/>
       <div>
-        <div style={{fontFamily:GS.fontSerif,fontSize:26,fontWeight:600,color:C.text}}>{hen.name}</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMid,marginTop:2}}>{hen.breed||"Breed not set"}{hen.age?` · ${hen.age}`:""}</div>
+        <div style={{fontFamily:FS.serif,fontSize:26,fontWeight:600,color:C.text}}>{hen.name}</div>
+        <div style={{fontFamily:FS.sans,fontSize:12.5,color:C.textMid,marginTop:2}}>{hen.breed||"Breed not set"}{hen.age?` · ${hen.age}`:""}</div>
         <div style={{display:"flex",gap:6,marginTop:7,flexWrap:"wrap"}}>
-          {hen.meds?.length>0&&<StatusPill label="💊 On medication" type="blue"/>}
-          {hen.inLay?<StatusPill label="🥚 In lay" type="ok"/>:<StatusPill label="Not in lay" type="muted"/>}
-          {Object.values(hen.welfare||{}).some(v=>v>=2)&&<StatusPill label="🚨 Needs attention" type="alert"/>}
-          {!Object.values(hen.welfare||{}).some(v=>v>=2)&&Object.values(hen.welfare||{}).some(v=>v===1)&&<StatusPill label="⚠️ Monitor" type="warn"/>}
+          {(hen.meds||[]).length>0&&<Pill label="💊 On medication" type="blue"/>}
+          {hen.inLay?<Pill label="🥚 In lay" type="ok"/>:<Pill label="Not in lay" type="muted"/>}
         </div>
       </div>
     </div>
-    <SubTabBar active={tab} onChange={setTab} tabs={[{key:"welfare",label:"🩺 Welfare"},{key:"health",label:"📋 Health"},{key:"eggs",label:"🥚 Eggs"},{key:"vet",label:"🏥 Vet"},{key:"reminders",label:"🔔"}]}/>
-    {tab==="welfare"&&<WelfarePanel hen={hen}/>}
-    {tab==="health"&&<HealthLogTab hen={hen}/>}
-    {tab==="eggs"&&<EggPhotoTab hen={hen}/>}
-    {tab==="vet"&&<VetVisitsTab hen={hen}/>}
-    {tab==="reminders"&&<RemindersTab henName={hen.name}/>}
+    <SubTabs active={tab} onChange={setTab} tabs={[{key:"welfare",label:"🩺 Welfare"},{key:"health",label:"📋 Health"}]}/>
+    {tab==="welfare"&&<WelfarePanel/>}
+    {tab==="health"&&<HealthPanel/>}
   </div>;
 }
 
-// ─── HEALTH LOG ───────────────────────────────────────────────────────────────
-function HealthLogTab({hen}){
-  const [markers,setMarkers]=useState({});
-  const [inLay,setInLay]=useState(null);
-  const [text,setText]=useState("");
-  const [loading,setLoading]=useState(false);
-  const [summary,setSummary]=useState("");
-  const [notes,setNotes]=useState([]);
-  const [saved,setSaved]=useState(false);
-  const summarise=async()=>{
-    if(!text.trim())return;setLoading(true);
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`You are a pet hen welfare assistant. Summarise this keeper observation into a clean diary entry (3–5 bullet points). Flag concerns with ⚠️, suggest vet if needed. Do not diagnose.\n\nHen: ${hen.name} (${hen.breed||"unknown breed"})\nNote: "${text}"`}]})});const d=await res.json();setSummary(d.content?.map(b=>b.text||"").join("")||"Could not summarise.");}
-    catch{setSummary("Error.");}setLoading(false);
-  };
-  const save=()=>{setNotes(n=>[{text:summary||text,date:new Date().toLocaleDateString("en-GB")},...n]);setSaved(true);setSummary("");setText("");setTimeout(()=>setSaved(false),2500);};
-  const inputStyle={width:"100%",padding:"10px 13px",borderRadius:9,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgMuted,outline:"none",boxSizing:"border-box"};
-  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
-    <WhiteCard>
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:14}}>Daily Health Check</div>
-      {HEALTH_MARKERS.map((m,i)=><div key={m.id} style={{marginBottom:14,paddingBottom:14,borderBottom:i<HEALTH_MARKERS.length-1?`1px solid ${C.borderLight}`:"none"}}>
-        <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginBottom:7,fontWeight:500}}>{m.icon} {m.label}</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {m.options.map(opt=>{const sel=markers[m.id]===opt;const bg=sel?(opt.includes("✅")?C.green:opt.includes("⚠️")?C.amber:C.red):C.bgMuted;return <button key={opt} onClick={()=>setMarkers(p=>({...p,[m.id]:opt}))} style={{background:bg,color:sel?"#fff":C.text,border:`1px solid ${sel?bg:C.border}`,borderRadius:8,padding:"6px 11px",fontSize:12,cursor:"pointer",fontFamily:GS.fontSans,transition:"all 0.15s",fontWeight:sel?500:400}}>{opt}</button>;})}
-        </div>
-      </div>)}
-    </WhiteCard>
-    <WhiteCard>
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Laying Status</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {["Laid today 🥚","Not in lay","Uncertain"].map(opt=><button key={opt} onClick={()=>setInLay(opt)} style={{background:inLay===opt?C.green:C.bgMuted,color:inLay===opt?"#fff":C.text,border:`1px solid ${inLay===opt?C.green:C.border}`,borderRadius:10,padding:"8px 14px",fontSize:13,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:inLay===opt?500:400}}>{opt}</button>)}
-      </div>
-    </WhiteCard>
-    <WhiteCard>
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:10}}>Observation Note</div>
-      <textarea value={text} onChange={e=>setText(e.target.value)} placeholder={`Type your observation for ${hen.name} today…`} style={{...inputStyle,minHeight:85,resize:"vertical",lineHeight:1.6}}/>
-      <div style={{display:"flex",gap:9,marginTop:11}}>
-        <button onClick={summarise} disabled={loading||!text.trim()} style={{background:loading?C.textMuted:C.green,color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontFamily:GS.fontSans,fontSize:13,cursor:loading?"default":"pointer",opacity:!text.trim()?0.4:1,fontWeight:500}}>{loading?"Summarising…":"✨ AI Summarise"}</button>
-        {(summary||text.trim())&&<button onClick={save} style={{background:C.greenLight,color:C.green,border:`1px solid ${C.green}44`,borderRadius:10,padding:"9px 16px",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",fontWeight:500}}>Save entry ✓</button>}
-      </div>
-      {summary&&<AIBox label="✨ AI Summary" content={summary} color={C.green}/>}
-      {saved&&<div style={{marginTop:10,background:C.greenLight,borderRadius:10,padding:"9px 13px",color:C.green,fontSize:13,fontFamily:GS.fontSans,fontWeight:500}}>✓ Saved to {hen.name}'s diary</div>}
-    </WhiteCard>
-    {notes.length>0&&<WhiteCard>
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Diary Entries</div>
-      {notes.map((n,i)=><div key={i} style={{background:C.bgMuted,borderRadius:10,padding:"11px 13px",marginBottom:8,border:`1px solid ${C.border}`}}>
-        <div style={{fontFamily:GS.fontSans,fontSize:10.5,color:C.textMuted,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.08em"}}>{n.date}</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{n.text}</div>
-      </div>)}
-    </WhiteCard>}
-  </div>;
-}
-
-// ─── EGG & PHOTO ─────────────────────────────────────────────────────────────
-function EggPhotoTab({hen}){
-  const [eggSel,setEggSel]=useState(null);
-  const [imgSrc,setImgSrc]=useState(null);
-  const [imgB64,setImgB64]=useState(null);
-  const [imgType,setImgType]=useState(null);
-  const [analysing,setAnalysing]=useState(false);
-  const [analysis,setAnalysis]=useState(null);
-  const [photoMode,setPhotoMode]=useState("egg");
-  const fileRef=useRef();
-  const handleFile=async e=>{
-    const file=e.target.files[0];if(!file)return;setAnalysis(null);
-    const fr=new FileReader();fr.onload=ev=>setImgSrc(ev.target.result);fr.readAsDataURL(file);
-    setImgB64(await toBase64(file));setImgType(file.type||"image/jpeg");
-  };
-  const analyse=async()=>{
-    if(!imgB64)return;setAnalysing(true);
-    const prompt=photoMode==="egg"?`You are a pet hen welfare expert. Analyse this egg photo from ${hen.name}. Identify: 1) Egg type, 2) What this indicates, 3) Practical next steps, 4) Whether a vet is needed.`:`You are a pet hen welfare expert. Analyse this photo of ${hen.name}. Observe: 1) Comb colour, 2) Feather quality, 3) Posture/alertness, 4) Any welfare concerns, 5) Whether a vet check is recommended.`;
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:imgType,data:imgB64}},{type:"text",text:prompt}]}]})});const d=await res.json();setAnalysis(d.content?.map(b=>b.text||"").join("")||"Could not analyse.");}
-    catch{setAnalysis("Error — please try again.");}setAnalysing(false);
-  };
-  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
-    <WhiteCard>
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:4}}>Egg Health Checker</div>
-      <div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMuted,marginBottom:14}}>Tap what you're seeing, or upload a photo for AI analysis</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        {EGG_TYPES.map(egg=><div key={egg.label} onClick={()=>setEggSel(egg)} style={{background:eggSel?.label===egg.label?egg.color+"12":C.bgMuted,border:`1.5px solid ${eggSel?.label===egg.label?egg.color:C.border}`,borderRadius:12,padding:"11px 13px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"all 0.2s"}}>
-          <span style={{fontSize:18}}>{egg.icon}</span><span style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.text,fontWeight:eggSel?.label===egg.label?600:400}}>{egg.label}</span>
-        </div>)}
-      </div>
-      {eggSel&&<div style={{marginTop:14,background:eggSel.color+"0D",border:`1px solid ${eggSel.color}33`,borderRadius:12,padding:"13px 15px"}}>
-        <div style={{fontFamily:GS.fontSerif,fontSize:15,fontWeight:600,color:eggSel.color,marginBottom:5}}>{eggSel.icon} {eggSel.label}</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,lineHeight:1.7}}>{eggSel.advice}</div>
-        <div style={{marginTop:8,fontSize:11,color:C.textMuted,fontStyle:"italic",fontFamily:GS.fontSans}}>⚕️ Not veterinary advice.</div>
-      </div>}
-    </WhiteCard>
-    <WhiteCard>
-      <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>AI Photo Analysis</div>
-      <div style={{display:"flex",gap:8,marginBottom:14}}>
-        {[{key:"egg",label:"🥚 Analyse Egg"},{key:"hen",label:"🐓 Analyse Hen"}].map(m=><button key={m.key} onClick={()=>{setPhotoMode(m.key);setAnalysis(null);setImgSrc(null);setImgB64(null);}} style={{flex:1,background:photoMode===m.key?C.green:C.bgMuted,color:photoMode===m.key?"#fff":C.text,border:`1px solid ${photoMode===m.key?C.green:C.border}`,borderRadius:10,padding:"9px 0",fontSize:13,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:photoMode===m.key?500:400,transition:"all 0.2s"}}>{m.label}</button>)}
-      </div>
-      <div onClick={()=>fileRef.current.click()} style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"26px 16px",textAlign:"center",cursor:"pointer",background:C.bgMuted,marginBottom:12,minHeight:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
-        {imgSrc?<img src={imgSrc} alt="uploaded" style={{maxWidth:"100%",maxHeight:200,borderRadius:10,objectFit:"contain"}}/>:<div><div style={{fontSize:32,marginBottom:8}}>{photoMode==="egg"?"🥚":"📷"}</div><div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid}}>Tap to upload photo</div></div>}
-      </div>
-      <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
-      {imgSrc&&<div style={{display:"flex",gap:9}}>
-        <button onClick={analyse} disabled={analysing} style={{flex:1,background:analysing?C.textMuted:C.gold,color:"#fff",border:"none",borderRadius:10,padding:"10px 0",fontFamily:GS.fontSans,fontSize:13,cursor:analysing?"default":"pointer",fontWeight:500}}>{analysing?"Analysing…":"✨ Analyse with AI"}</button>
-        <button onClick={()=>{setImgSrc(null);setImgB64(null);setAnalysis(null);}} style={{background:C.bgMuted,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer"}}>Clear</button>
-      </div>}
-      {analysis&&<AIBox label={`✨ Analysis — ${photoMode==="egg"?"Egg":hen.name}`} content={analysis} color={C.gold}/>}
-    </WhiteCard>
-  </div>;
-}
-
-// ─── VET VISITS ───────────────────────────────────────────────────────────────
-function VetVisitsTab({hen}){
-  const [visits,setVisits]=useState([]);
-  const [form,setForm]=useState({date:"",reason:"",notes:"",meds:""});
-  const [raw,setRaw]=useState("");
-  const [adding,setAdding]=useState(false);
-  const [loading,setLoading]=useState(false);
-  const inputStyle={width:"100%",padding:"10px 13px",borderRadius:9,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgCard,outline:"none",boxSizing:"border-box"};
-  const summariseVet=async()=>{
-    if(!raw.trim())return;setLoading(true);
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`Summarise these vet notes for ${hen.name}: 1) Key findings, 2) Medications with dosage, 3) Follow-up actions.\n\nNotes: "${raw}"`}]})});const d=await res.json();setForm(f=>({...f,notes:d.content?.map(b=>b.text||"").join("")||"Could not summarise."}));}
-    catch{setForm(f=>({...f,notes:"Error."}));}setLoading(false);
-  };
-  const save=()=>{if(!form.date||!form.reason)return;setVisits(v=>[{...form,id:Date.now()},...v]);setForm({date:"",reason:"",notes:"",meds:""});setRaw("");setAdding(false);};
-  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:C.text}}>Vet Visits</div>
-      <button onClick={()=>setAdding(a=>!a)} style={{background:C.green,color:"#fff",border:"none",borderRadius:22,padding:"8px 16px",fontFamily:GS.fontSans,fontSize:12.5,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}><span>+</span> Add Visit</button>
-    </div>
-    {adding&&<MutedCard>
-      <div style={{display:"flex",flexDirection:"column",gap:9}}>
-        <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={inputStyle}/>
-        <input placeholder="Reason for visit" value={form.reason} onChange={e=>setForm(f=>({...f,reason:e.target.value}))} style={inputStyle}/>
-        <textarea placeholder="Paste raw vet notes here to AI summarise…" value={raw} onChange={e=>setRaw(e.target.value)} style={{...inputStyle,minHeight:75,resize:"vertical"}}/>
-        {raw.trim()&&<button onClick={summariseVet} disabled={loading} style={{background:loading?C.textMuted:C.blue,color:"#fff",border:"none",borderRadius:9,padding:"8px 14px",fontSize:12.5,cursor:loading?"default":"pointer",fontFamily:GS.fontSans,alignSelf:"flex-start",fontWeight:500}}>{loading?"Summarising…":"✨ AI Summarise Vet Notes"}</button>}
-        {form.notes&&<AIBox label="📋 Summary" content={form.notes} color={C.blue}/>}
-        <input placeholder="Medications prescribed (optional)" value={form.meds} onChange={e=>setForm(f=>({...f,meds:e.target.value}))} style={inputStyle}/>
-        <div style={{display:"flex",gap:9}}>
-          <button onClick={save} style={{background:C.green,color:"#fff",border:"none",borderRadius:9,padding:"9px 16px",fontSize:13,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:500}}>Save ✓</button>
-          <button onClick={()=>setAdding(false)} style={{background:C.bgCard,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:9,padding:"9px 14px",fontSize:13,cursor:"pointer",fontFamily:GS.fontSans}}>Cancel</button>
-        </div>
-      </div>
-    </MutedCard>}
-    {!visits.length&&!adding&&<div style={{textAlign:"center",padding:"32px 20px",color:C.textMuted,fontFamily:GS.fontSans,fontSize:13,background:C.bgMuted,borderRadius:16,border:`1px dashed ${C.border}`,lineHeight:1.6}}>No vet visits recorded yet.<br/>Tap "+ Add Visit" to log {hen.name}'s first appointment.</div>}
-    {visits.map(v=><WhiteCard key={v.id}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-        <div><div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text}}>{v.reason}</div><div style={{fontFamily:GS.fontSans,fontSize:11.5,color:C.textMuted,marginTop:2}}>{v.date}</div></div>
-        <StatusPill label="🏥 Vet Visit" type="blue"/>
-      </div>
-      {v.notes&&<div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{v.notes}</div>}
-      {v.meds&&<div style={{marginTop:9,background:C.goldLight,borderRadius:9,padding:"8px 12px",fontFamily:GS.fontSans,fontSize:12.5,color:C.textMid,border:`1px solid ${C.goldBorder}`}}>💊 Meds: {v.meds}</div>}
-    </WhiteCard>)}
-  </div>;
-}
-
-// ─── REMINDERS ────────────────────────────────────────────────────────────────
-function RemindersTab({henName}){
-  const [reminders,setReminders]=useState([{id:1,text:henName?`Flubenvet worming — ${henName}`:"Red mite check — all hens",due:"2026-06-01",done:false,icon:"💊"},{id:2,text:"Replenish oyster shell grit",due:"2026-05-30",done:false,icon:"🦴"}]);
-  const [newText,setNewText]=useState("");
-  const [newDate,setNewDate]=useState("");
-  const add=()=>{if(!newText.trim())return;setReminders(r=>[...r,{id:Date.now(),text:newText,due:newDate,done:false,icon:"📅"}]);setNewText("");setNewDate("");};
-  const inputStyle={padding:"10px 13px",borderRadius:9,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgMuted,outline:"none"};
-  return <div>
-    <div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:C.text,marginBottom:14}}>{henName?`Reminders — ${henName}`:"Reminders"}</div>
-    <WhiteCard style={{marginBottom:14}}>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="New reminder" style={{...inputStyle,width:"100%",boxSizing:"border-box"}}/>
-        <div style={{display:"flex",gap:8}}>
-          <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={{...inputStyle,flex:1}}/>
-          <button onClick={add} style={{background:C.green,color:"#fff",border:"none",borderRadius:9,padding:"10px 16px",fontSize:13,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:500}}>+ Add</button>
-        </div>
-      </div>
-    </WhiteCard>
-    {reminders.map(r=><div key={r.id} style={{background:r.done?C.bgMuted:C.bgCard,borderRadius:13,padding:"12px 16px",border:`1px solid ${r.done?C.border:C.borderLight}`,display:"flex",alignItems:"center",gap:12,marginBottom:9,opacity:r.done?0.6:1,boxShadow:r.done?"none":"0 1px 4px rgba(0,0,0,0.04)"}}>
-      <span style={{fontSize:20,flexShrink:0}}>{r.icon}</span>
-      <div style={{flex:1}}>
-        <div style={{fontFamily:GS.fontSans,fontSize:13.5,color:C.text,textDecoration:r.done?"line-through":"none",fontWeight:500}}>{r.text}</div>
-        {r.due&&<div style={{fontFamily:GS.fontSans,fontSize:11.5,color:C.textMuted,marginTop:2}}>Due {r.due}</div>}
-      </div>
-      <button onClick={()=>setReminders(p=>p.map(x=>x.id===r.id?{...x,done:!x.done}:x))} style={{background:r.done?C.bgMuted:C.greenLight,color:r.done?C.textMuted:C.green,border:`1px solid ${r.done?C.border:C.green+"44"}`,borderRadius:9,padding:"5px 11px",fontSize:12,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:500}}>{r.done?"Undo":"Done ✓"}</button>
-    </div>)}
-  </div>;
-}
-
-// ─── HEALTH TAB ───────────────────────────────────────────────────────────────
-function HealthTab(){
-  const [selected,setSelected]=useState([]);
+// ── HEALTH MAIN TAB ───────────────────────────────────────────────────────────
+function HealthMainTab(){
+  const [sel,setSel]=useState([]);
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState("");
-  const toggle=s=>setSelected(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
+  const toggle=s=>setSel(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const analyse=async()=>{
-    if(!selected.length)return;setLoading(true);setResult("");
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`You are a UK pet hen welfare advisor. A keeper observed: ${selected.join(", ")}.\n\nProvide: 1) Possible welfare concerns (frame as "may indicate"), 2) Immediate actions, 3) Whether a vet visit is recommended and how urgently. Be warm and practical. Always recommend a qualified poultry vet.`}]})});const d=await res.json();setResult(d.content?.map(b=>b.text||"").join("")||"Could not get advice.");}
-    catch{setResult("Error — please try again.");}setLoading(false);
+    if(!sel.length)return;setLoading(true);setResult("");
+    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:`UK hen welfare advisor. Keeper observed: ${sel.join(", ")}.\n\nProvide: 1) Possible welfare concerns, 2) Immediate actions, 3) Vet visit recommendation. Be warm, practical.`}]})});const d=await res.json();setResult(d.content?.map(b=>b.text||"").join("")||"Could not get advice.");}
+    catch{setResult("Error.");}setLoading(false);
   };
   return <div>
-    <div style={{fontFamily:GS.fontSerif,fontSize:26,fontWeight:600,color:C.text,marginBottom:16}}>Symptom Checker</div>
-    <MutedCard style={{marginBottom:20,borderLeft:`3px solid ${C.gold}`}}>
-      <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,lineHeight:1.7}}>This tool helps you <strong style={{color:C.text}}>observe and consider</strong> possible welfare concerns. It is not a diagnosis tool. Always consult a qualified avian or poultry vet.</div>
-    </MutedCard>
-    <div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:12}}>Select all symptoms observed</div>
+    <div style={{fontFamily:FS.serif,fontSize:26,fontWeight:600,color:C.text,marginBottom:16}}>Symptom Checker</div>
+    <MCard style={{marginBottom:20,borderLeft:`3px solid ${C.gold}`}}>
+      <div style={{fontFamily:FS.sans,fontSize:13,color:C.textMid,lineHeight:1.7}}>Helps you <strong style={{color:C.text}}>observe and consider</strong> welfare concerns. Not a diagnosis tool. Always consult a qualified poultry vet.</div>
+    </MCard>
+    <div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:12}}>Select all symptoms observed</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18}}>
-      {SYMPTOMS.map(s=><button key={s} onClick={()=>toggle(s)} style={{background:selected.includes(s)?C.green:C.bgCard,color:selected.includes(s)?"#fff":C.text,border:`1.5px solid ${selected.includes(s)?C.green:C.border}`,borderRadius:10,padding:"10px 12px",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",textAlign:"left",transition:"all 0.15s",fontWeight:selected.includes(s)?500:400}}>{s}</button>)}
+      {SYMPTOMS.map(s=><button key={s} onClick={()=>toggle(s)} style={{background:sel.includes(s)?C.green:C.bgCard,color:sel.includes(s)?"#fff":C.text,border:`1.5px solid ${sel.includes(s)?C.green:C.border}`,borderRadius:10,padding:"11px 12px",fontFamily:FS.sans,fontSize:13,cursor:"pointer",textAlign:"left",fontWeight:sel.includes(s)?500:400}}>{s}</button>)}
     </div>
-    {selected.length>0&&<div style={{marginBottom:14}}>
-      <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginBottom:7}}>{selected.length} selected:</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{selected.map(s=><span key={s} onClick={()=>toggle(s)} style={{background:C.green,color:"#fff",borderRadius:20,padding:"4px 11px",fontSize:12,fontFamily:GS.fontSans,cursor:"pointer"}}>{s} ×</span>)}</div>
+    {sel.length>0&&<div style={{marginBottom:14}}>
+      <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMid,marginBottom:7}}>{sel.length} selected:</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{sel.map(s=><span key={s} onClick={()=>toggle(s)} style={{background:C.green,color:"#fff",borderRadius:20,padding:"4px 11px",fontSize:12,fontFamily:FS.sans,cursor:"pointer"}}>{s} ×</span>)}</div>
     </div>}
-    <button onClick={analyse} disabled={loading||!selected.length} style={{width:"100%",background:selected.length?C.green:C.border,color:selected.length?"#fff":C.textMuted,border:"none",borderRadius:12,padding:"13px 0",fontFamily:GS.fontSans,fontSize:14,cursor:selected.length?"pointer":"default",fontWeight:500,marginBottom:16}}>{loading?"Analysing symptoms…":"✨ Get Welfare Guidance"}</button>
+    <button onClick={analyse} disabled={loading||!sel.length} style={{width:"100%",background:sel.length?C.green:C.border,color:sel.length?"#fff":C.textMuted,border:"none",borderRadius:12,padding:"14px 0",fontFamily:FS.sans,fontSize:14,cursor:sel.length?"pointer":"default",fontWeight:500,marginBottom:16}}>{loading?"Analysing…":"✨ Get Welfare Guidance"}</button>
     {result&&<AIBox label="✨ Welfare Guidance" content={result} color={C.green}/>}
-    <div style={{marginTop:24}}>
-      <div style={{fontFamily:GS.fontSerif,fontSize:20,fontWeight:600,color:C.text,marginBottom:14}}>Quick Guides</div>
-      {[{emoji:"🔴",title:"Red Mite",desc:"Check perches and nest box corners with a torch after dark. Grey/red moving specks confirm infestation. Treat with licensed products."},{emoji:"🪶",title:"Annual Moult",desc:"Normal in autumn. Hens may stop laying for 6–12 weeks. Support with high-protein feed and reduce stress."},{emoji:"🐣",title:"Broody Behaviour",desc:"Sitting tight, puffed up, growling. Lift off the nest 2–3 times daily. Consider a broody coop to break the cycle."},{emoji:"💊",title:"Worming",desc:"Flubenvet is the only licensed in-feed wormer for hens in the UK. Use for 7 consecutive days as directed."}].map(g=><WhiteCard key={g.title} style={{marginBottom:10,display:"flex",gap:13,alignItems:"flex-start"}}>
-        <span style={{fontSize:22,flexShrink:0}}>{g.emoji}</span>
-        <div><div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:14,color:C.text,marginBottom:3}}>{g.title}</div><div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,lineHeight:1.6}}>{g.desc}</div></div>
-      </WhiteCard>)}
-    </div>
   </div>;
 }
 
-// ─── VET TAB ──────────────────────────────────────────────────────────────────
-function VetTab(){
-  const [subTab,setSubTab]=useState("find");
-  const [filter,setFilter]=useState("all");
-  const [expandedId,setExpandedId]=useState(null);
-  const [openSrc,setOpenSrc]=useState({});
-  const [suggestForm,setSuggestForm]=useState({name:"",location:"",website:"",why:""});
-  const [suggested,setSuggested]=useState(false);
-  const filtered=VETS.filter(v=>{if(filter==="tier1")return v.tier===1;if(filter==="online")return v.online;return true;});
-  const inputStyle={width:"100%",padding:"10px 13px",borderRadius:9,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgMuted,outline:"none",boxSizing:"border-box"};
-  return <div>
-    <div style={{fontFamily:GS.fontSerif,fontSize:26,fontWeight:600,color:C.text,marginBottom:4}}>Find a Vet</div>
-    <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Every practice independently cross-verified. We only list vets with confirmed hen or poultry experience.</div>
-    <MutedCard style={{marginBottom:18,borderLeft:`3px solid ${C.amber}`}}>
-      <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.amber,marginBottom:4}}>⚠️ Why this matters</div>
-      <div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMid,lineHeight:1.7}}>During standard UK vet training, <strong style={{color:C.text}}>less than one day</strong> is dedicated to poultry. A vet who treats exotic lizards is not automatically equipped for hens.</div>
-    </MutedCard>
-    <SubTabBar active={subTab} onChange={setSubTab} tabs={[{key:"find",label:"🗺️ Find a Vet"},{key:"ask",label:"❓ What to Ask"},{key:"suggest",label:"➕ Suggest"}]}/>
-    {subTab==="find"&&<>
-      <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}>
-        {[["all","All vets"],["tier1","⭐ Specialists"],["online","📱 Online"]].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} style={{background:filter===k?C.green:C.bgCard,color:filter===k?"#fff":C.text,border:`1.5px solid ${filter===k?C.green:C.border}`,borderRadius:20,padding:"6px 14px",fontSize:12.5,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:filter===k?500:400}}>{l}</button>)}
-      </div>
-      {filtered.map(vet=>{const isOpen=expandedId===vet.id;return <div key={vet.id} style={{background:C.bgCard,border:`1.5px solid ${vet.flagged?C.amber+"66":C.border}`,borderRadius:16,marginBottom:12,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
-        <div onClick={()=>setExpandedId(isOpen?null:vet.id)} style={{padding:"15px 17px",cursor:"pointer"}}>
-          <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text,marginBottom:2}}>{vet.name}</div>
-              <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginBottom:8}}>📍 {vet.location}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                {vet.tier===1?<StatusPill label="⭐ Hen Specialist" type="ok"/>:<StatusPill label="✅ Poultry-Experienced" type="warn"/>}
-                {vet.bhwt&&<StatusPill label="BHWT Listed" type="muted"/>}
-                {vet.online&&<StatusPill label="📱 Online" type="ok"/>}
-                {vet.homeVisit&&<StatusPill label="🏡 Home visits" type="warn"/>}
-              </div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{flexShrink:0,marginTop:3,transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}><polyline points="3,6 8,11 13,6" stroke={C.textMuted} strokeWidth="1.5" strokeLinecap="round"/></svg>
-          </div>
-          {vet.flagged&&<div style={{marginTop:10,background:C.amberLight,border:`1px solid ${C.goldBorder}`,borderRadius:9,padding:"8px 11px",fontFamily:GS.fontSans,fontSize:12,color:C.amber}}>{vet.note}</div>}
-        </div>
-        {isOpen&&<div style={{borderTop:`1px solid ${C.borderLight}`,padding:"15px 17px",background:C.bgMuted}}>
-          <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.blue,fontStyle:"italic",marginBottom:10}}>🩺 {vet.vet}</div>
-          <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,lineHeight:1.75,marginBottom:12}}>{vet.desc}</div>
-          <div style={{marginBottom:12}}><div style={{fontFamily:GS.fontSans,fontSize:10.5,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:6}}>Qualifications</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{vet.quals.map(q=><span key={q} style={{background:C.blueLight,color:C.blue,border:`1px solid ${C.blue}33`,borderRadius:8,padding:"3px 9px",fontSize:11,fontFamily:GS.fontSans}}>{q}</span>)}</div></div>
-          {vet.caveat&&<div style={{background:C.amberLight,border:`1px solid ${C.goldBorder}`,borderRadius:10,padding:"10px 12px",fontFamily:GS.fontSans,fontSize:12,color:C.amber,marginBottom:12,lineHeight:1.6}}>⚠️ {vet.caveat}</div>}
-          <div style={{marginBottom:14}}><button onClick={()=>setOpenSrc(p=>({...p,[vet.id]:!p[vet.id]}))} style={{background:"none",border:"none",color:C.blue,fontSize:11.5,fontFamily:GS.fontSans,cursor:"pointer",padding:0,textDecoration:"underline"}}>{openSrc[vet.id]?"Hide":"Show"} sources ({vet.sources.length})</button>{openSrc[vet.id]&&<ul style={{margin:"7px 0 0 0",padding:"0 0 0 16px"}}>{vet.sources.map((s,i)=><li key={i} style={{fontSize:11.5,color:C.textMid,fontFamily:GS.fontSans,marginBottom:3,lineHeight:1.5}}>{s}</li>)}</ul>}</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {vet.phone&&<a href={`tel:${vet.phone}`} style={{background:C.green,color:"#fff",borderRadius:10,padding:"9px 14px",fontSize:13,fontFamily:GS.fontSans,textDecoration:"none",fontWeight:500}}>📞 {vet.phone}</a>}
-            {vet.bookingUrl&&<a href={vet.bookingUrl} target="_blank" rel="noreferrer" style={{background:C.blue,color:"#fff",borderRadius:10,padding:"9px 14px",fontSize:13,fontFamily:GS.fontSans,textDecoration:"none",fontWeight:500}}>Book online →</a>}
-            {vet.website&&!vet.bookingUrl&&<a href={vet.website} target="_blank" rel="noreferrer" style={{background:C.blue,color:"#fff",borderRadius:10,padding:"9px 14px",fontSize:13,fontFamily:GS.fontSans,textDecoration:"none",fontWeight:500}}>Visit website →</a>}
-          </div>
-        </div>}
-      </div>;})}
-      <div style={{background:C.redLight,border:`1px solid ${C.red}33`,borderRadius:14,padding:"14px 16px",marginTop:4}}>
-        <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.red,marginBottom:9}}>❌ Reviewed but not listed</div>
-        {[{name:"Farthings Hill Vets, Horsham",reason:"Website checked — no mention of poultry or avian services."},{name:"Arthur Lodge Vets, Horsham",reason:"Website checked — no current mention of poultry services."},{name:"Various BHWT-listed practices",reason:"BHWT entries are self-reported for £50/year with no independent verification. Always check the practice website."}].map((w,i)=><div key={i} style={{marginBottom:i<2?9:0}}>
-          <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:12.5,color:C.text}}>{w.name}</div>
-          <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,marginTop:2,lineHeight:1.5}}>{w.reason}</div>
-        </div>)}
-      </div>
-    </>}
-    {subTab==="ask"&&<>
-      <WhiteCard style={{marginBottom:14}}><div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:5}}>What to ask before you book</div><div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,lineHeight:1.65}}>Even at a listed practice, not every vet will have hen experience. These questions quickly reveal confidence — or the lack of it.</div></WhiteCard>
-      {VET_QUESTIONS.map((item,i)=><WhiteCard key={i} style={{marginBottom:10}}>
-        <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-          <div style={{width:26,height:26,borderRadius:"50%",background:C.greenLight,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:GS.fontSans,fontSize:13,fontWeight:700,color:C.green,flexShrink:0}}>{i+1}</div>
-          <div><div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,marginBottom:5,lineHeight:1.55,fontWeight:500}}>"{item.q}"</div><div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,lineHeight:1.6}}><strong style={{color:C.amber}}>Why ask:</strong> {item.why}</div></div>
-        </div>
-      </WhiteCard>)}
-      <div style={{background:C.blueLight,border:`1px solid ${C.blue}33`,borderRadius:14,padding:"14px 16px"}}>
-        <div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13,color:C.blue,marginBottom:6}}>🆘 Emergency?</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,lineHeight:1.75}}><strong>Surrey Poultry Vet</strong> — telephone & video including emergencies. surreypoultryvet.co.uk<br/><br/><strong>RVC Beaumont Sainsbury OOH</strong> via Queen Mother Hospital: <strong>01707 666399</strong></div>
-      </div>
-    </>}
-    {subTab==="suggest"&&<>
-      <WhiteCard style={{marginBottom:14}}><div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:5}}>Our verification process</div><div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,lineHeight:1.75}}>Before adding any vet we confirm: (1) their website names poultry/hens/avian, (2) at least one independent source confirms hen experience, (3) a named vet with relevant qualifications. All listings re-verified every 6 months.</div></WhiteCard>
-      {!suggested?<WhiteCard>
-        <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Suggest a practice</div>
-        <div style={{display:"flex",flexDirection:"column",gap:9}}>
-          {[["name","Practice name"],["location","Location"],["website","Website (if known)"]].map(([k,ph])=><input key={k} value={suggestForm[k]} onChange={e=>setSuggestForm(f=>({...f,[k]:e.target.value}))} placeholder={ph} style={inputStyle}/>)}
-          <textarea value={suggestForm.why} onChange={e=>setSuggestForm(f=>({...f,why:e.target.value}))} placeholder="Why do you recommend them?" style={{...inputStyle,minHeight:70,resize:"vertical"}}/>
-          <button onClick={()=>suggestForm.name&&suggestForm.location&&setSuggested(true)} style={{background:suggestForm.name&&suggestForm.location?C.green:C.border,color:"#fff",border:"none",borderRadius:10,padding:"11px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",fontWeight:500}}>Submit for Review</button>
-        </div>
-      </WhiteCard>:<div style={{background:C.greenLight,border:`1px solid ${C.green}44`,borderRadius:14,padding:"20px",textAlign:"center",fontFamily:GS.fontSans,fontSize:13,color:C.green,fontWeight:500}}>✓ Thanks — we'll research and verify before adding to the directory.</div>}
-    </>}
-    <div style={{marginTop:18,padding:"11px 13px",background:C.bgMuted,borderRadius:11,fontFamily:GS.fontSans,fontSize:11.5,color:C.textMuted,lineHeight:1.6}}>⚕️ For information only. Always verify directly before booking. Last full review: May 2026.</div>
-  </div>;
-}
-
-// ─── COMMUNITY TAB ───────────────────────────────────────────────────────────
-function CommunityTab(){
-  const [subTab,setSubTab]=useState("feed");
-  const [posts,setPosts]=useState(COMMUNITY_POSTS_DATA);
-  const [newPost,setNewPost]=useState("");
-  const [postType,setPostType]=useState("question");
-  const [liked,setLiked]=useState({});
-  const [added,setAdded]=useState({});
-  const [question,setQuestion]=useState("");
-  const [aiAnswer,setAiAnswer]=useState("");
-  const [aiLoading,setAiLoading]=useState(false);
-  const [members,setMembers]=useState(FLOCK_MEMBERS);
-  const [inviteOpen,setInviteOpen]=useState(false);
-  const [inviteName,setInviteName]=useState("");
-  const [inviteRole,setInviteRole]=useState("Co-keeper");
-  const [inviteSent,setInviteSent]=useState(false);
-  const TYPE={question:{label:"❓ Question",color:C.blue,bg:C.blueLight},tip:{label:"💡 Tip",color:C.green,bg:C.greenLight},welfare_win:{label:"🎉 Win",color:C.gold,bg:C.goldLight},photo_log:{label:"📸 Photo",color:C.purple,bg:C.purpleLight}};
-  const askAI=async()=>{
-    if(!question.trim())return;setAiLoading(true);setAiAnswer("");
-    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`You are a knowledgeable UK pet hen welfare advisor. Answer warmly, practically, in under 200 words. Recommend a poultry vet for medical concerns.\n\nQuestion: ${question}`}]})});const d=await res.json();setAiAnswer(d.content?.map(b=>b.text||"").join("")||"Could not get an answer.");}
-    catch{setAiAnswer("Error — please try again.");}setAiLoading(false);
-  };
-  const sendInvite=()=>{if(!inviteName.trim())return;setMembers(m=>[...m,{id:`u${Date.now()}`,name:inviteName,avatar:inviteName[0].toUpperCase(),role:inviteRole,online:false,pending:true,color:C.textMuted}]);setInviteSent(true);setInviteName("");setTimeout(()=>{setInviteOpen(false);setInviteSent(false);},2000);};
-  const ROLE_COLOR={"Owner":C.green,"Co-keeper":C.blue,"Carer (read-only)":C.textMuted};
-  const inputStyle={padding:"10px 13px",borderRadius:9,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgCard,outline:"none"};
-
-  return <div>
-    <div style={{fontFamily:GS.fontSerif,fontSize:26,fontWeight:600,color:C.text,marginBottom:4}}>Community</div>
-    <div style={{fontFamily:GS.fontSans,fontSize:13,color:C.textMid,marginBottom:16}}>Connect with hen keepers across the UK</div>
-    <SubTabBar active={subTab} onChange={setSubTab} tabs={[{key:"feed",label:"📰 Feed"},{key:"friends",label:"👥 Friends"},{key:"account",label:"🔑 Account"},{key:"ask",label:"✨ Ask AI"}]}/>
-
-    {subTab==="feed"&&<>
-      <WhiteCard style={{marginBottom:14}}>
-        <div style={{display:"flex",gap:10,marginBottom:11}}><UserAvatar initials="S" size={36}/><textarea value={newPost} onChange={e=>setNewPost(e.target.value)} placeholder="Share a tip, question or welfare win…" style={{flex:1,minHeight:62,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgMuted,resize:"none",outline:"none"}}/></div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:11}}>{Object.entries(TYPE).map(([k,cfg])=><button key={k} onClick={()=>setPostType(k)} style={{background:postType===k?cfg.color:C.bgMuted,color:postType===k?"#fff":C.textMid,border:`1px solid ${postType===k?cfg.color:C.border}`,borderRadius:20,padding:"5px 12px",fontSize:11.5,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:postType===k?500:400}}>{cfg.label}</button>)}</div>
-        <button onClick={()=>{if(!newPost.trim())return;setPosts(p=>[{id:`p${Date.now()}`,user:"Sarah",initials:"S",time:"Just now",type:postType,content:newPost,tags:[],likes:0,comments:0,location:"South East England"},...p]);setNewPost("");}} disabled={!newPost.trim()} style={{background:newPost.trim()?C.green:C.border,color:"#fff",border:"none",borderRadius:10,padding:"9px 18px",fontFamily:GS.fontSans,fontSize:13,cursor:newPost.trim()?"pointer":"default",fontWeight:500}}>Share with Community</button>
-      </WhiteCard>
-      {posts.map(post=><WhiteCard key={post.id} style={{marginBottom:12}}>
-        <div style={{display:"flex",gap:10,marginBottom:10}}><UserAvatar initials={post.initials} size={38}/><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}><span style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:14,color:C.text}}>{post.user}</span><span style={{background:TYPE[post.type]?.bg,color:TYPE[post.type]?.color,borderRadius:20,padding:"2px 9px",fontSize:10.5,fontFamily:GS.fontSans,fontWeight:500}}>{TYPE[post.type]?.label}</span></div><div style={{fontFamily:GS.fontSans,fontSize:11,color:C.textMuted,marginTop:2}}>📍 {post.location} · {post.time}</div></div></div>
-        <div style={{fontFamily:GS.fontSans,fontSize:13.5,color:C.text,lineHeight:1.7,marginBottom:post.tags?.length?9:10}}>{post.content}</div>
-        {post.tags?.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>{post.tags.map(t=><span key={t} style={{background:C.bgMuted,color:C.textMuted,borderRadius:20,padding:"3px 9px",fontSize:11,fontFamily:GS.fontSans}}>#{t}</span>)}</div>}
-        <div style={{display:"flex",gap:14,borderTop:`1px solid ${C.borderLight}`,paddingTop:10}}>
-          <button onClick={()=>setLiked(p=>({...p,[post.id]:!p[post.id]}))} style={{background:"none",border:"none",cursor:"pointer",fontFamily:GS.fontSans,fontSize:13,color:liked[post.id]?C.red:C.textMuted,display:"flex",alignItems:"center",gap:4}}>{liked[post.id]?"❤️":"🤍"} {post.likes+(liked[post.id]?1:0)}</button>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontFamily:GS.fontSans,fontSize:13,color:C.textMuted}}>💬 {post.comments}</button>
-        </div>
-      </WhiteCard>)}
-    </>}
-
-    {subTab==="friends"&&<>
-      <WhiteCard style={{marginBottom:14}}>
-        <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Your Friends</div>
-        {[{name:"HenKeeper_Jo",initials:"HJ",location:"Surrey",hens:4},{name:"ChickenMumKate",initials:"CK",location:"Kent",hens:6}].map((f,i)=><div key={f.name} style={{display:"flex",alignItems:"center",gap:12,paddingBottom:i===0?12:0,marginBottom:i===0?12:0,borderBottom:i===0?`1px solid ${C.borderLight}`:"none"}}>
-          <UserAvatar initials={f.initials} size={40}/>
-          <div style={{flex:1}}><div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:14,color:C.text}}>{f.name}</div><div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginTop:1}}>📍 {f.location} · 🐔 {f.hens} hens</div></div>
-          <button style={{background:C.blueLight,color:C.blue,border:`1px solid ${C.blue}33`,borderRadius:9,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:500}}>Message</button>
-        </div>)}
-      </WhiteCard>
-      <WhiteCard>
-        <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:4}}>Discover Keepers Near You</div>
-        <div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMuted,marginBottom:12}}>South East England</div>
-        {[{name:"Sussex_Silkies",initials:"SS",location:"East Sussex",hens:5},{name:"KentHenHouse",initials:"KH",location:"West Kent",hens:8}].map((f,i)=><div key={f.name} style={{display:"flex",alignItems:"center",gap:12,paddingBottom:i===0?12:0,marginBottom:i===0?12:0,borderBottom:i===0?`1px solid ${C.borderLight}`:"none"}}>
-          <UserAvatar initials={f.initials} size={38} bg={C.bgMuted}/>
-          <div style={{flex:1}}><div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13.5,color:C.text}}>{f.name}</div><div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMuted,marginTop:1}}>📍 {f.location} · 🐔 {f.hens} hens</div></div>
-          <button onClick={()=>setAdded(p=>({...p,[f.name]:true}))} style={{background:added[f.name]?C.greenLight:C.green,color:added[f.name]?C.green:"#fff",border:`1px solid ${added[f.name]?C.green+"44":C.green}`,borderRadius:9,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:GS.fontSans,fontWeight:500}}>{added[f.name]?"✓ Added":"+ Add"}</button>
-        </div>)}
-      </WhiteCard>
-    </>}
-
-    {subTab==="account"&&<>
-      <WhiteCard style={{marginBottom:14}}>
-        <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:14}}>Flock Members</div>
-        {members.map((m,i)=><div key={m.id} style={{display:"flex",alignItems:"center",gap:12,paddingBottom:i<members.length-1?13:0,marginBottom:i<members.length-1?13:0,borderBottom:i<members.length-1?`1px solid ${C.borderLight}`:"none"}}>
-          <div style={{position:"relative"}}><UserAvatar initials={m.avatar} size={40} bg={(ROLE_COLOR[m.role]||C.textMuted)+"18"} color={ROLE_COLOR[m.role]||C.textMuted}/><div style={{position:"absolute",bottom:1,right:1,width:9,height:9,borderRadius:"50%",background:m.online?"#5FA85F":C.border,border:"2px solid #fff"}}/></div>
-          <div style={{flex:1}}><div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:14,color:C.text,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{m.name}{m.pending&&<StatusPill label="Pending" type="warn"/>}{m.id===CURRENT_USER.id&&<StatusPill label="You" type="muted"/>}</div><div style={{fontFamily:GS.fontSans,fontSize:12,color:ROLE_COLOR[m.role]||C.textMuted,marginTop:2}}>{m.role}</div></div>
-          <div style={{fontFamily:GS.fontSans,fontSize:11,color:m.online?"#5FA85F":C.textMuted}}>{m.online?"● Online":"○ Offline"}</div>
-        </div>)}
-      </WhiteCard>
-      <MutedCard style={{marginBottom:14}}>
-        <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:10}}>+ Invite Someone</div>
-        {!inviteOpen?<button onClick={()=>setInviteOpen(true)} style={{background:C.green,color:"#fff",border:"none",borderRadius:10,padding:"10px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",width:"100%",fontWeight:500}}>Send Invite Link</button>
-        :inviteSent?<div style={{textAlign:"center",padding:"10px 0",color:C.green,fontFamily:GS.fontSans,fontSize:13,fontWeight:500}}>✓ Invite sent!</div>
-        :<div style={{display:"flex",flexDirection:"column",gap:9}}>
-          <input value={inviteName} onChange={e=>setInviteName(e.target.value)} placeholder="Their name" style={{...inputStyle,width:"100%",boxSizing:"border-box"}}/>
-          <select value={inviteRole} onChange={e=>setInviteRole(e.target.value)} style={{...inputStyle,width:"100%",boxSizing:"border-box",appearance:"none"}}><option>Co-keeper</option><option>Carer (read-only)</option><option>Owner</option></select>
-          <div style={{fontFamily:GS.fontSans,fontSize:12,color:C.textMid,background:C.bgCard,borderRadius:9,padding:"9px 12px",border:`1px solid ${C.border}`,lineHeight:1.65}}>
-            {inviteRole==="Co-keeper"&&"✏️ Can log health checks, complete tasks, add diary entries."}
-            {inviteRole==="Carer (read-only)"&&"👁️ Can see today's tasks and flock status only. Perfect for holiday cover."}
-            {inviteRole==="Owner"&&"🔑 Full access including inviting others and editing hen profiles."}
-          </div>
-          <div style={{display:"flex",gap:9}}>
-            <button onClick={sendInvite} style={{flex:1,background:C.green,color:"#fff",border:"none",borderRadius:9,padding:"10px 0",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",fontWeight:500}}>Send Invite</button>
-            <button onClick={()=>setInviteOpen(false)} style={{background:C.bgCard,color:C.textMid,border:`1px solid ${C.border}`,borderRadius:9,padding:"10px 14px",fontFamily:GS.fontSans,fontSize:13,cursor:"pointer"}}>Cancel</button>
-          </div>
-        </div>}
-      </MutedCard>
-      <WhiteCard>
-        <div style={{fontFamily:GS.fontSerif,fontSize:18,fontWeight:600,color:C.text,marginBottom:12}}>Access Levels</div>
-        {[{role:"Owner",icon:"🔑",desc:"Full access. Can invite/remove members, edit hen profiles."},{role:"Co-keeper",icon:"✏️",desc:"Can log health checks, tick daily tasks, add diary entries."},{role:"Carer (read-only)",icon:"👁️",desc:"Sees today's dashboard and tasks only. Ideal for holiday cover."}].map((r,i)=><div key={r.role} style={{display:"flex",gap:12,paddingBottom:i<2?12:0,marginBottom:i<2?12:0,borderBottom:i<2?`1px solid ${C.borderLight}`:"none"}}>
-          <div style={{width:34,height:34,borderRadius:10,background:C.greenLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>{r.icon}</div>
-          <div><div style={{fontFamily:GS.fontSans,fontWeight:600,fontSize:13.5,color:C.text}}>{r.role}</div><div style={{fontFamily:GS.fontSans,fontSize:12.5,color:C.textMid,marginTop:3,lineHeight:1.5}}>{r.desc}</div></div>
-        </div>)}
-      </WhiteCard>
-    </>}
-
-    {subTab==="ask"&&<>
-      <GreenCard style={{marginBottom:16}}><div style={{fontFamily:GS.fontSerif,fontSize:22,fontWeight:600,color:"#F5F0E8",marginBottom:3}}>✨ Ask the Hen Advisor</div><div style={{fontFamily:GS.fontSans,fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.6}}>AI-powered, evidence-based answers for UK hen keepers.</div></GreenCard>
-      <WhiteCard style={{marginBottom:14}}>
-        <textarea value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about hen welfare, nutrition, behaviour, egg laying, moulting, seasonal care…" style={{width:"100%",minHeight:85,padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,fontFamily:GS.fontSans,fontSize:13,color:C.text,background:C.bgMuted,resize:"none",boxSizing:"border-box",outline:"none",lineHeight:1.6}}/>
-        <button onClick={askAI} disabled={aiLoading||!question.trim()} style={{marginTop:11,background:aiLoading?C.textMuted:C.green,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontFamily:GS.fontSans,fontSize:13,cursor:aiLoading?"default":"pointer",opacity:!question.trim()?0.4:1,fontWeight:500}}>{aiLoading?"Thinking…":"Ask ✨"}</button>
-        {aiAnswer&&<AIBox label="✨ Hen Advisor:" content={aiAnswer} color={C.green}/>}
-      </WhiteCard>
-      <WhiteCard>
-        <div style={{fontFamily:GS.fontSerif,fontSize:17,fontWeight:600,color:C.text,marginBottom:12}}>Popular questions</div>
-        {["What are the signs of red mite infestation?","How long does a moult usually last?","Should I separate a broody hen?","What's the best natural worming approach?"].map(q=><button key={q} onClick={()=>setQuestion(q)} style={{display:"block",width:"100%",textAlign:"left",background:C.bgMuted,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 13px",marginBottom:8,fontFamily:GS.fontSans,fontSize:13,color:C.text,cursor:"pointer",lineHeight:1.4}}>{q} <span style={{color:C.textMuted}}>→</span></button>)}
-      </WhiteCard>
-    </>}
-  </div>;
-}
-
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
-function FlockAndFeatherApp(){
-  const [mainTab,setMainTab]=useState("care");
-  const [activeHen,setActiveHen]=useState(null);
-  const [hens,setHens]=useState([]);
-  const [memorialHens,setMemorialHens]=useState([]);
-  const [flockTasks,setFlockTasks]=useState({});
-
-  const NAV=[
-    {key:"care",   label:"CARE",     Icon:NavCare},
-    {key:"flock",  label:"FLOCK",    Icon:NavFlock},
-    {key:"health", label:"HEALTH",   Icon:NavHealth},
-    {key:"vets",   label:"VETS",     Icon:NavVets},
-    {key:"community",label:"CONNECT",Icon:NavComm},
+// ── VETS TAB ──────────────────────────────────────────────────────────────────
+function VetsTab(){
+  const [open,setOpen]=useState(null);
+  const VETS=[
+    {id:"v1",name:"Surrey Poultry Vet",vet:"Dr Henrietta Kodilinye-Sims BVetMed PgDipVEPH MRCVS",loc:"Guildford, Surrey",tier:1,online:true,homeVisit:true,phone:null,url:"https://www.surreypoultryvet.co.uk/book-poultry-consultation",desc:"The leading dedicated poultry vet in SE England. Designed and taught the poultry medicine course at University of Surrey. BVPA committee member.",quals:["BVetMed","PgDipVEPH","MRCVS","BVPA member"]},
+    {id:"v2",name:"RVC Beaumont Sainsbury",vet:"Dr Victoria Baldrey BVSc DZooMed (Avian) MRCVS",loc:"Camden, London NW1",tier:1,online:false,homeVisit:false,phone:"020 7387 8134",url:"https://www.rvc.ac.uk/small-animal-vet/general-practice/book-an-appointment",desc:"Most experienced avian team in London. Dr Baldrey holds DZooMed (Avian). Separate avian ward. OOH via Queen Mother Hospital: 01707 666399.",quals:["DZooMed (Avian)","RCVS Recognised Specialist","BVSc","MRCVS"]},
+    {id:"v3",name:"Hunters Lodge Veterinary Practice",vet:"Mrs Helen Stephens BVetMed MRCVS",loc:"Ewhurst, Surrey",tier:2,online:false,homeVisit:false,phone:"01483 276464",url:null,desc:"Mixed practice with confirmed poultry experience. Dedicated chickens section on own website.",quals:["BVetMed MRCVS"]},
   ];
+  return <div>
+    <div style={{fontFamily:FS.serif,fontSize:26,fontWeight:600,color:C.text,marginBottom:4}}>Find a Vet</div>
+    <div style={{fontFamily:FS.sans,fontSize:13,color:C.textMid,marginBottom:16}}>Every practice independently cross-verified — only vets with confirmed hen experience.</div>
+    <MCard style={{marginBottom:18,borderLeft:`3px solid ${C.amber}`}}>
+      <div style={{fontFamily:FS.sans,fontWeight:600,fontSize:13,color:C.amber,marginBottom:4}}>⚠️ Why this matters</div>
+      <div style={{fontFamily:FS.sans,fontSize:12.5,color:C.textMid,lineHeight:1.7}}><strong style={{color:C.text}}>Less than one day</strong> of standard UK vet training covers poultry.</div>
+    </MCard>
+    {VETS.map(v=>{const isOpen=open===v.id;return <div key={v.id} style={{background:C.bgCard,border:`1.5px solid ${C.border}`,borderRadius:16,marginBottom:12,overflow:"hidden"}}>
+      <div onClick={()=>setOpen(isOpen?null:v.id)} style={{padding:"15px 17px",cursor:"pointer"}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:FS.serif,fontSize:17,fontWeight:600,color:C.text,marginBottom:2}}>{v.name}</div>
+            <div style={{fontFamily:FS.sans,fontSize:12,color:C.textMuted,marginBottom:8}}>📍 {v.loc}</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {v.tier===1?<Pill label="⭐ Hen Specialist" type="ok"/>:<Pill label="✅ Poultry-Experienced" type="warn"/>}
+              {v.online&&<Pill label="📱 Online" type="ok"/>}
+              {v.homeVisit&&<Pill label="🏡 Home visits" type="warn"/>}
+            </div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{flexShrink:0,marginTop:3,transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}><polyline points="3,6 8,11 13,6" stroke={C.textMuted} strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </div>
+      </div>
+      {isOpen&&<div style={{borderTop:`1px solid ${C.borderLight}`,padding:"15px 17px",background:C.bgMuted}}>
+        <div style={{fontFamily:FS.sans,fontSize:12,color:C.blue,fontStyle:"italic",marginBottom:10}}>🩺 {v.vet}</div>
+        <div style={{fontFamily:FS.sans,fontSize:13,color:C.text,lineHeight:1.75,marginBottom:12}}>{v.desc}</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:14}}>{v.quals.map(q=><span key={q} style={{background:C.blueLight,color:C.blue,border:`1px solid ${C.blue}33`,borderRadius:8,padding:"3px 9px",fontSize:11,fontFamily:FS.sans}}>{q}</span>)}</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {v.phone&&<a href={`tel:${v.phone}`} style={{background:C.green,color:"#fff",borderRadius:10,padding:"10px 14px",fontSize:13,fontFamily:FS.sans,textDecoration:"none",fontWeight:500}}>📞 {v.phone}</a>}
+          {v.url&&<a href={v.url} target="_blank" rel="noreferrer" style={{background:C.blue,color:"#fff",borderRadius:10,padding:"10px 14px",fontSize:13,fontFamily:FS.sans,textDecoration:"none",fontWeight:500}}>Book online →</a>}
+        </div>
+      </div>}
+    </div>;})}
+  </div>;
+}
 
-  return <div style={{minHeight:"100vh",background:C.bg,paddingBottom:76}}>
-    <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');*{box-sizing:border-box;}::-webkit-scrollbar{width:3px;height:3px;}::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px;}input,textarea,select{-webkit-appearance:none;}`}</style>
+// ── COMMUNITY TAB ─────────────────────────────────────────────────────────────
+function CommTab(){
+  const [sub,setSub]=useState("feed");
+  const [posts,setPosts]=useState([
+    {id:"p1",user:"HenKeeper_Jo",ini:"HJ",time:"2h ago",type:"question",content:"Has anyone dealt with a hen going broody in May? Dotty has been sitting 3 days 😅",tags:["broody"],likes:12,comments:8,loc:"Surrey"},
+    {id:"p2",user:"ChickenMumKate",ini:"CK",time:"5h ago",type:"tip",content:"Proud of Buttercup — first egg after her moult! Added extra oyster shell grit 🥚",tags:["moult"],likes:34,comments:5,loc:"Kent"},
+    {id:"p3",user:"BackyardFlockUK",ini:"BF",time:"Yesterday",type:"welfare_win",content:"Red mite populations EXPLODE in warm weather. Check perches every 3–4 days with a torch.",tags:["red mite"],likes:67,comments:14,loc:"Sussex"},
+  ]);
+  const [newPost,setNewPost]=useState("");
+  const [ptype,setPtype]=useState("question");
+  const [liked,setLiked]=useState({});
+  const [loading,setLoading]=useState(false);
+  const [ans,setAns]=useState("");
+  const qRef=useRef("");
+  const TYPE={question:{l:"❓ Question",c:C.blue,bg:C.blueLight},tip:{l:"💡 Tip",c:C.green,bg:C.greenLight},welfare_win:{l:"🎉 Win",c:C.gold,bg:C.goldLight}};
+  const iS={width:"100%",padding:"14px",borderRadius:10,border:`1px solid ${C.border}`,fontFamily:FS.sans,fontSize:"16px",color:C.text,background:C.bgMuted,outline:"none",boxSizing:"border-box"};
+  const askAI=async()=>{
+    const q=qRef.current;
+    if(!q.trim())return;setLoading(true);setAns("");
+    try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,messages:[{role:"user",content:`UK hen welfare advisor. Answer warmly, practically, under 200 words.\n\nQuestion: ${q}`}]})});const d=await res.json();setAns(d.content?.map(b=>b.text||"").join("")||"Could not get answer.");}
+    catch{setAns("Error.");}setLoading(false);
+  };
+  return <div>
+    <div style={{fontFamily:FS.serif,fontSize:26,fontWeight:600,color:C.text,marginBottom:4}}>Community</div>
+    <div style={{fontFamily:FS.sans,fontSize:13,color:C.textMid,marginBottom:16}}>Connect with hen keepers across the UK</div>
+    <SubTabs active={sub} onChange={setSub} tabs={[{key:"feed",label:"📰 Feed"},{key:"ask",label:"✨ Ask AI"}]}/>
+    {sub==="feed"&&<>
+      <WCard>
+        <div style={{display:"flex",gap:10,marginBottom:11}}><UAvatar ini="S" size={36}/><textarea value={newPost} onChange={e=>setNewPost(e.target.value)} placeholder="Share a tip, question or welfare win…" style={{flex:1,minHeight:65,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,fontFamily:FS.sans,fontSize:"16px",color:C.text,background:C.bgMuted,resize:"none",outline:"none"}}/></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:11}}>{Object.entries(TYPE).map(([k,v])=><button key={k} onClick={()=>setPtype(k)} style={{background:ptype===k?v.c:C.bgMuted,color:ptype===k?"#fff":C.textMid,border:`1px solid ${ptype===k?v.c:C.border}`,borderRadius:20,padding:"6px 13px",fontSize:12,cursor:"pointer",fontFamily:FS.sans,fontWeight:ptype===k?500:400}}>{v.l}</button>)}</div>
+        <button onClick={()=>{if(!newPost.trim())return;setPosts(p=>[{id:`p${Date.now()}`,user:"Sarah",ini:"S",time:"Just now",type:ptype,content:newPost,tags:[],likes:0,comments:0,loc:"South East England"},...p]);setNewPost("");}} disabled={!newPost.trim()} style={{background:newPost.trim()?C.green:C.border,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontFamily:FS.sans,fontSize:13,cursor:newPost.trim()?"pointer":"default",fontWeight:500}}>Share</button>
+      </WCard>
+      {posts.map(p=><WCard key={p.id}>
+        <div style={{display:"flex",gap:10,marginBottom:10}}><UAvatar ini={p.ini} size={38}/><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}><span style={{fontFamily:FS.sans,fontWeight:600,fontSize:14,color:C.text}}>{p.user}</span><span style={{background:TYPE[p.type]?.bg,color:TYPE[p.type]?.c,borderRadius:20,padding:"2px 9px",fontSize:10.5,fontFamily:FS.sans,fontWeight:500}}>{TYPE[p.type]?.l}</span></div><div style={{fontFamily:FS.sans,fontSize:11,color:C.textMuted,marginTop:2}}>📍 {p.loc} · {p.time}</div></div></div>
+        <div style={{fontFamily:FS.sans,fontSize:13.5,color:C.text,lineHeight:1.7,marginBottom:p.tags?.length?9:10}}>{p.content}</div>
+        {p.tags?.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>{p.tags.map(t=><span key={t} style={{background:C.bgMuted,color:C.textMuted,borderRadius:20,padding:"3px 9px",fontSize:11,fontFamily:FS.sans}}>#{t}</span>)}</div>}
+        <div style={{display:"flex",gap:14,borderTop:`1px solid ${C.borderLight}`,paddingTop:10}}>
+          <button onClick={()=>setLiked(x=>({...x,[p.id]:!x[p.id]}))} style={{background:"none",border:"none",cursor:"pointer",fontFamily:FS.sans,fontSize:13,color:liked[p.id]?C.red:C.textMuted,display:"flex",alignItems:"center",gap:4}}>{liked[p.id]?"❤️":"🤍"} {p.likes+(liked[p.id]?1:0)}</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontFamily:FS.sans,fontSize:13,color:C.textMuted}}>💬 {p.comments}</button>
+        </div>
+      </WCard>)}
+    </>}
+    {sub==="ask"&&<>
+      <GCard><div style={{fontFamily:FS.serif,fontSize:20,fontWeight:600,color:"#F5F0E8",marginBottom:3}}>✨ Ask the Hen Advisor</div><div style={{fontFamily:FS.sans,fontSize:12,color:"rgba(255,255,255,0.6)"}}>AI-powered answers for UK hen keepers.</div></GCard>
+      <WCard>
+        <textarea id="ai-question" defaultValue="" onChange={e=>qRef.current=e.target.value} placeholder="Ask anything about hen welfare, nutrition, behaviour…" style={{...iS,minHeight:90,resize:"vertical",lineHeight:1.6}}/>
+        <button onClick={askAI} disabled={loading} style={{marginTop:12,background:loading?C.textMuted:C.green,color:"#fff",border:"none",borderRadius:10,padding:"12px 18px",fontFamily:FS.sans,fontSize:13,cursor:loading?"default":"pointer",fontWeight:500}}>{loading?"Thinking…":"Ask ✨"}</button>
+        {ans&&<AIBox label="✨ Hen Advisor:" content={ans} color={C.green}/>}
+      </WCard>
+      <WCard>
+        <div style={{fontFamily:FS.serif,fontSize:17,fontWeight:600,color:C.text,marginBottom:12}}>Popular questions</div>
+        {["What are the signs of red mite infestation?","How long does a moult usually last?","Should I separate a broody hen?","What's the best natural worming approach?"].map(qq=><button key={qq} onClick={()=>{qRef.current=qq;const el=document.getElementById("ai-question");if(el)el.value=qq;}} style={{display:"block",width:"100%",textAlign:"left",background:C.bgMuted,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 13px",marginBottom:8,fontFamily:FS.sans,fontSize:13,color:C.text,cursor:"pointer",lineHeight:1.4}}>{qq} →</button>)}
+      </WCard>
+    </>}
+  </div>;
+}
 
-    <AppHeader hens={hens} flockTasks={flockTasks}/>
-
-    {mainTab==="flock"&&activeHen&&<div style={{background:C.bgCard,borderBottom:`1px solid ${C.borderLight}`,padding:"9px 20px",display:"flex",alignItems:"center",gap:8}}>
-      <button onClick={()=>setActiveHen(null)} style={{background:"none",border:"none",color:C.textMid,fontFamily:GS.fontSans,fontSize:13,cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:5}}>
+// ── ROOT ──────────────────────────────────────────────────────────────────────
+function App(){
+  const [tab,setTab]=useState("care");
+  const [hens,setHens]=useState([]);
+  const [memHens,setMemHens]=useState([]);
+  const [tasks,setTasks]=useState({});
+  const [activeHen,setActiveHen]=useState(null);
+  const NAV=[
+    {k:"care",l:"CARE",icon:(a)=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>},
+    {k:"flock",l:"FLOCK",icon:(a)=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><circle cx="9" cy="7" r="3"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>},
+    {k:"health",l:"HEALTH",icon:(a)=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>},
+    {k:"vets",l:"VETS",icon:(a)=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>},
+    {k:"community",l:"CONNECT",icon:(a)=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={a?C.green:C.textMuted} strokeWidth="1.5" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>},
+  ];
+  return <div style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
+    <Header hens={hens} tasks={tasks}/>
+    {tab==="flock"&&activeHen&&<div style={{background:C.bgCard,borderBottom:`1px solid ${C.borderLight}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+      <button onClick={()=>setActiveHen(null)} style={{background:"none",border:"none",color:C.textMid,fontFamily:FS.sans,fontSize:13,cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:5}}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><polyline points="9,2 4,7 9,12" stroke={C.textMid} strokeWidth="1.5" strokeLinecap="round"/></svg>Flock
       </button>
-      <span style={{color:C.border,fontSize:14}}>/</span>
-      <span style={{fontFamily:GS.fontSans,fontSize:13,color:C.text,fontWeight:500}}>{activeHen.emoji} {activeHen.name}</span>
+      <span style={{color:C.border}}>/</span>
+      <span style={{fontFamily:FS.sans,fontSize:13,color:C.text,fontWeight:500}}>{activeHen.name}</span>
     </div>}
-
-    <div style={{maxWidth:560,margin:"0 auto",padding:"18px 18px 0"}}>
-      {mainTab==="care"&&<CareTab hens={hens} flockTasks={flockTasks} setFlockTasks={setFlockTasks}/>}
-      {mainTab==="flock"&&(activeHen
-        ?<HenProfile hen={activeHen} onBack={()=>setActiveHen(null)}/>
-        :<FlockTab hens={hens} setHens={setHens} memorialHens={memorialHens} setMemorialHens={setMemorialHens} setActiveHen={setActiveHen}/>)}
-      {mainTab==="health"&&<HealthTab/>}
-      {mainTab==="vets"&&<VetTab/>}
-      {mainTab==="community"&&<CommunityTab/>}
+    <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+      <div style={{maxWidth:560,margin:"0 auto",padding:"18px 18px 20px"}}>
+        {tab==="care"&&<CareTab hens={hens} tasks={tasks} setTasks={setTasks}/>}
+        {tab==="flock"&&(activeHen?<HenProfile hen={activeHen} onBack={()=>setActiveHen(null)}/>:<FlockTab hens={hens} setHens={setHens} memHens={memHens} setMemHens={setMemHens} setActiveHen={setActiveHen}/>)}
+        {tab==="health"&&<HealthMainTab/>}
+        {tab==="vets"&&<VetsTab/>}
+        {tab==="community"&&<CommTab/>}
+      </div>
     </div>
-
-    <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.bgCard,borderTop:`1px solid ${C.borderLight}`,zIndex:100}}>
+    <div style={{background:C.bgCard,borderTop:`1px solid ${C.borderLight}`,flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
       <div style={{maxWidth:560,margin:"0 auto",display:"flex"}}>
-        {NAV.map(n=>{const active=mainTab===n.key;return <button key={n.key} onClick={()=>{setMainTab(n.key);if(n.key!=="flock")setActiveHen(null);}} style={{flex:1,background:"none",border:"none",padding:"10px 0 12px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+        {NAV.map(n=>{const active=tab===n.k;return <button key={n.k} onClick={()=>{setTab(n.k);if(n.k!=="flock")setActiveHen(null);}} style={{flex:1,background:"none",border:"none",padding:"10px 0 12px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
           {active&&<div style={{width:5,height:5,borderRadius:"50%",background:C.green,marginBottom:1}}/>}
-          <n.Icon a={active}/>
-          <span style={{fontFamily:GS.fontSans,fontSize:9,color:active?C.green:C.textMuted,fontWeight:active?600:400,letterSpacing:"0.07em"}}>{n.label}</span>
+          {n.icon(active)}
+          <span style={{fontFamily:FS.sans,fontSize:9,color:active?C.green:C.textMuted,fontWeight:active?600:400,letterSpacing:"0.07em"}}>{n.l}</span>
         </button>;})}
       </div>
     </div>
   </div>;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(FlockAndFeatherApp));
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
